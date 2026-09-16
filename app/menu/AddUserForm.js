@@ -80,16 +80,15 @@ export default function AddUserForm() {
         action={addFormAction}
         className="flex w-full max-w-md flex-col gap-4"
       >
-        <label className="flex flex-col gap-1" htmlFor="username">
+        <label className="flex flex-col gap-1" htmlFor="items">
           <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Username
+            Items
           </span>
           <input
-            id="username"
-            name="username"
+            id="items"
+            name="items"
             type="text"
             required
-            autoComplete="username"
             className="rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
           />
         </label>

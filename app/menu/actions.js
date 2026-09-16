@@ -3,10 +3,10 @@
 import { createClient } from "@/lib/supabase/server";
 
 export async function addPpi(prevState, formData) {
-  const username = String(formData.get("username") ?? "").trim();
+  const items = String(formData.get("items") ?? "").trim();
 
-  if (!username) {
-    return { ok: false, message: "Username is required." };
+  if (!items) {
+    return { ok: false, message: "Items is required." };
   }
 
   try {
@@ -18,7 +18,7 @@ export async function addPpi(prevState, formData) {
     }
 
     const { error } = await supabase.rpc("ppi", {
-      p_description: username,
+      p_description: items,
     });
 
     if (error) {
