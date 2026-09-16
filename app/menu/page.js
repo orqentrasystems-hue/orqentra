@@ -8,6 +8,8 @@ export const metadata = {
   description: "Menu",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function MenuPage() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();

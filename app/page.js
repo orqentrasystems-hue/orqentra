@@ -7,6 +7,8 @@ export const metadata = {
   description: "Log on",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
