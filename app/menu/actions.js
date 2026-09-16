@@ -1,14 +1,12 @@
 "use server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-export async function addUser(prevState, formData) {
+export async function addPpi(prevState, formData) {
   const username = String(formData.get("username") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
 
-  if (!username || !password) {
-    return { ok: false, message: "Username and password are required." };
+  if (!username) {
+    return { ok: false, message: "Username is required." };
   }
 
   try {
@@ -19,22 +17,64 @@ export async function addUser(prevState, formData) {
       return { ok: false, message: "You must be logged on." };
     }
 
-    const admin = createAdminClient();
-    const { error } = await admin.auth.admin.createUser({
-      email: username,
-      password,
-      email_confirm: true,
+    const { error } = await supabase.rpc("ppi", {
+      p_description: username,
     });
 
     if (error) {
       return { ok: false, message: error.message };
     }
 
-    return { ok: true, message: "User added." };
+    return { ok: true, message: "Added." };
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "Could not add user.",
+      message: error instanceof Error ? error.message : "Could not add.",
+    };
+  }
+}
+
+function toRows(data) {
+  if (data == null) {
+    return [];
+  }
+
+  const values = Array.isArray(data) ? data : [data];
+
+  return values.map((row) => {
+    if (row && typeof row === "object" && !Array.isArray(row)) {
+      return row;
+    }
+
+    return { value: row };
+  });
+}
+
+export async function getAll(prevState) {
+  try {
+    const supabase = await createClient();
+    const { data: session } = await supabase.auth.getClaims();
+
+    if (!session?.claims) {
+      return { ok: false, message: "You must be logged on.", rows: [] };
+    }
+
+    const { data, error } = await supabase.rpc("pi_getall");
+
+    if (error) {
+      return { ok: false, message: error.message, rows: [] };
+    }
+
+    return {
+      ok: true,
+      message: "",
+      rows: JSON.parse(JSON.stringify(toRows(data))),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Could not get rows.",
+      rows: [],
     };
   }
 }

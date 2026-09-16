@@ -30,7 +30,7 @@ export default async function MenuPage() {
           </button>
         </form>
       </header>
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-center gap-6 py-16 px-16 bg-white dark:bg-black sm:items-start">
+      <main className="flex flex-1 w-full max-w-5xl flex-col items-center justify-center gap-6 py-16 px-16 bg-white dark:bg-black sm:items-start">
         <h1 className="text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
           Menu
         </h1>
