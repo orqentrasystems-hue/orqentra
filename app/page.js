@@ -14,7 +14,7 @@ export default async function Home() {
   const { data } = await supabase.auth.getClaims();
 
   if (data?.claims) {
-    redirect("/menu");
+    redirect("/landing");
   }
 
   return (
