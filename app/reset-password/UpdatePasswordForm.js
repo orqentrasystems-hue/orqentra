@@ -1,41 +1,44 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState } from "react";
-import { logOn } from "./actions";
+import { updatePassword } from "./actions";
 
 const initialState = {
+  ok: false,
   message: "",
 };
 
-export default function LogonForm() {
-  const [state, formAction, pending] = useActionState(logOn, initialState);
+export default function UpdatePasswordForm() {
+  const [state, formAction, pending] = useActionState(
+    updatePassword,
+    initialState,
+  );
 
   return (
     <form action={formAction} className="flex w-full max-w-md flex-col gap-4">
-      <label className="flex flex-col gap-1" htmlFor="username">
-        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          Username
-        </span>
-        <input
-          id="username"
-          name="username"
-          type="text"
-          required
-          autoComplete="username"
-          className="rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
-        />
-      </label>
       <label className="flex flex-col gap-1" htmlFor="password">
         <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          Password
+          New password
         </span>
         <input
           id="password"
           name="password"
           type="password"
           required
-          autoComplete="current-password"
+          autoComplete="new-password"
+          className="rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
+        />
+      </label>
+      <label className="flex flex-col gap-1" htmlFor="confirm">
+        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          Confirm password
+        </span>
+        <input
+          id="confirm"
+          name="confirm"
+          type="password"
+          required
+          autoComplete="new-password"
           className="rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
         />
       </label>
@@ -44,14 +47,8 @@ export default function LogonForm() {
         disabled={pending}
         className="rounded bg-zinc-800 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300"
       >
-        {pending ? "Logging on…" : "Log on"}
+        {pending ? "Updating…" : "Update password"}
       </button>
-      <Link
-        href="/reset-password"
-        className="text-sm font-medium text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-      >
-        Reset Password
-      </Link>
       {state.message ? (
         <p aria-live="polite" className="text-sm text-red-700 dark:text-red-400">
           {state.message}
