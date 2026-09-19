@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { exitApp, signOut } from "../actions";
+import PermissionsGrid from "./PermissionsGrid";
 import UsersDropdown from "./UsersDropdown";
 import { NAV_APP_COOKIE, NAV_PAGE_COOKIE } from "@/lib/nav-access";
 import { createClient } from "@/lib/supabase/server";
@@ -11,6 +12,11 @@ export const metadata = {
 };
 
 export const dynamic = "force-dynamic";
+
+const SELECT_USER = {
+  id: "0",
+  email: " - SELECT -",
+};
 
 function firstString(value) {
   if (Array.isArray(value)) {
@@ -97,137 +103,10 @@ function toReturnedInteger(data) {
   return Number.isFinite(n) ? Math.trunc(n) : 0;
 }
 
-function formatCell(value) {
-  if (value == null) {
-    return "";
-  }
-
-  if (typeof value === "object") {
-    return JSON.stringify(value);
-  }
-
-  return String(value);
-}
-
-function isFunctionColumn(column) {
-  return column.toLowerCase() === "function";
-}
-
-function CheckboxCell({ id, checked }) {
-  return (
-    <td className="px-3 py-2 align-middle">
-      <input
-        type="checkbox"
-        name="functions"
-        value={id}
-        defaultChecked={checked}
-        aria-label={`Select function ${id}`}
-        className="h-4 w-4"
-      />
-    </td>
-  );
-}
-
-function headerCells(columns, hasFunctionColumn) {
-  const cells = [];
-
-  if (!hasFunctionColumn) {
-    cells.push(
-      <th
-        key="selected"
-        className="w-10 px-3 py-2 font-medium"
-        aria-label="Selected"
-      />,
-    );
-  }
-
-  for (const column of columns) {
-    if (isFunctionColumn(column)) {
-      cells.push(
-        <th
-          key="selected"
-          className="w-10 px-3 py-2 font-medium"
-          aria-label="Selected"
-        />,
-      );
-    }
-
-    cells.push(
-      <th key={column} className="px-3 py-2 font-medium">
-        {column}
-      </th>,
-    );
-  }
-
-  return cells;
-}
-
-function bodyCells(columns, hasFunctionColumn, id, row, checked) {
-  const cells = [];
-
-  if (!hasFunctionColumn) {
-    cells.push(<CheckboxCell key="selected" id={id} checked={checked} />);
-  }
-
-  for (const column of columns) {
-    if (isFunctionColumn(column)) {
-      cells.push(<CheckboxCell key="selected" id={id} checked={checked} />);
-    }
-
-    cells.push(
-      <td key={column} className="px-3 py-2 align-top">
-        {formatCell(row[column])}
-      </td>,
-    );
-  }
-
-  return cells;
-}
-
-function ResultGrid({ rows, checkedById }) {
-  if (!rows?.length) {
-    return (
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">No rows.</p>
-    );
-  }
-
-  const columns = Object.keys(rows[0]).filter(
-    (column) => column.toLowerCase() !== "id",
-  );
-  const hasFunctionColumn = columns.some(isFunctionColumn);
-
-  return (
-    <div className="w-full overflow-x-auto">
-      <table className="w-full border-collapse text-left text-sm text-zinc-800 dark:text-zinc-200">
-        <thead>
-          <tr className="border-b border-zinc-300 dark:border-zinc-600">
-            {headerCells(columns, hasFunctionColumn)}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => {
-            const id = integerId(rawField(row, "id")) || String(index);
-            const checked = Boolean(checkedById[id]);
-
-            return (
-              <tr
-                key={id}
-                className="border-b border-zinc-200 dark:border-zinc-700"
-              >
-                {bodyCells(columns, hasFunctionColumn, id, row, checked)}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 async function permCheckedByFunctionId(supabase, userId, appName, rows) {
   const checkedById = {};
 
-  if (!userId) {
+  if (!userId || userId === SELECT_USER.id) {
     return checkedById;
   }
 
@@ -279,17 +158,20 @@ export default async function PermissionsPage({ searchParams }) {
     supabase.rpc("pr_functions_by_app", { p_app_name: appName }),
   ]);
 
-  const users = toRows(usersResult.data)
-    .map((row) => ({
-      id: integerId(rawField(row, "id")),
-      email: field(row, "email"),
-    }))
-    .filter((user) => user.id !== "");
+  const users = [
+    SELECT_USER,
+    ...toRows(usersResult.data)
+      .map((row) => ({
+        id: integerId(rawField(row, "id")),
+        email: field(row, "email"),
+      }))
+      .filter((user) => user.id !== "" && user.id !== SELECT_USER.id),
+  ];
 
   const requestedUser = firstString((await searchParams).user).trim();
   const selectedUserId = users.some((user) => user.id === requestedUser)
     ? requestedUser
-    : (users[0]?.id ?? "");
+    : SELECT_USER.id;
 
   const functionRows = JSON.parse(JSON.stringify(toRows(functionsResult.data)));
   const checkedById = functionsResult.error
@@ -337,10 +219,11 @@ export default async function PermissionsPage({ searchParams }) {
             {functionsResult.error.message}
           </p>
         ) : (
-          <ResultGrid
+          <PermissionsGrid
             key={selectedUserId}
             rows={functionRows}
             checkedById={checkedById}
+            selectedUserId={selectedUserId}
           />
         )}
       </main>
