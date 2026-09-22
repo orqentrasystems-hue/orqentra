@@ -47,9 +47,22 @@ export function buildFunctionMenuTree(data) {
         id: `descr:${section}:${descr}`,
         label: descr,
         children: [],
+        isChild: true,
       });
     }
   }
 
-  return sections.map(({ seen, ...node }) => node);
+  return sections.map(({ seen, ...node }) => {
+    const children = node.children;
+    const onlyChild = children.length === 1 ? children[0] : null;
+
+    if (
+      onlyChild &&
+      String(onlyChild.label).trim() === String(node.label).trim()
+    ) {
+      return onlyChild;
+    }
+
+    return node;
+  });
 }

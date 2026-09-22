@@ -2,39 +2,16 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { exitApp, signOut } from "../actions";
 import AppTree from "../landing/AppTree";
-import { buildFunctionMenuTree } from "./buildFunctionMenuTree";
+import { buildFunctionMenuTree } from "./app-menu/buildFunctionMenuTree";
 import { NAV_APP_COOKIE } from "@/lib/nav-access";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-function firstString(value) {
-  if (Array.isArray(value)) {
-    return value[0] ?? "";
-  }
-
-  return value ?? "";
-}
-
-export async function generateMetadata({ searchParams }) {
-  const appName = firstString((await searchParams).app).trim() || "App menu";
-
-  return {
-    title: appName,
-    description: appName,
-  };
-}
-
-export default async function AppMenuPage({ searchParams }) {
-  const appName = firstString((await searchParams).app).trim();
+export default async function WorkspaceLayout({ children }) {
+  const appName = (await cookies()).get(NAV_APP_COOKIE)?.value ?? "";
 
   if (!appName) {
-    redirect("/landing");
-  }
-
-  const allowedApp = (await cookies()).get(NAV_APP_COOKIE)?.value ?? "";
-
-  if (allowedApp !== appName) {
     redirect("/landing");
   }
 
@@ -60,8 +37,8 @@ export default async function AppMenuPage({ searchParams }) {
   const nodes = error ? [] : buildFunctionMenuTree(data);
 
   return (
-    <div className="flex flex-col flex-1 items-center bg-zinc-50 font-sans dark:bg-black">
-      <header className="flex w-full items-center justify-between px-16 py-4">
+    <div className="flex flex-col flex-1 bg-zinc-50 font-sans dark:bg-black">
+      <header className="flex w-full items-center justify-between px-8 py-4">
         <form action={exitApp}>
           <button
             type="submit"
@@ -79,20 +56,28 @@ export default async function AppMenuPage({ searchParams }) {
           </button>
         </form>
       </header>
-      <main className="flex w-full max-w-5xl flex-col items-start gap-6 px-16 py-4 bg-white dark:bg-black">
-        <h1 className="text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-          {appName}
-        </h1>
-        {error ? (
-          <p className="text-sm text-red-700 dark:text-red-400">{error.message}</p>
-        ) : (
-          <AppTree
-            nodes={JSON.parse(JSON.stringify(nodes))}
-            openMenuPages
-            emptyMessage="No menu items."
-          />
-        )}
-      </main>
+      <div className="flex min-h-0 flex-1 w-full bg-white dark:bg-black">
+        <aside className="flex w-fit shrink-0 flex-col items-start gap-6 border-r border-zinc-200 px-8 py-4 dark:border-zinc-700">
+          <h1 className="text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
+            {appName}
+          </h1>
+          {error ? (
+            <p className="text-sm text-red-700 dark:text-red-400">
+              {error.message}
+            </p>
+          ) : (
+            <AppTree
+              nodes={JSON.parse(JSON.stringify(nodes))}
+              openMenuPages
+              asButtons
+              emptyMessage="No menu items."
+            />
+          )}
+        </aside>
+        <section className="flex min-w-0 flex-1 flex-col items-start gap-6 px-8 py-4">
+          {children}
+        </section>
+      </div>
     </div>
   );
 }

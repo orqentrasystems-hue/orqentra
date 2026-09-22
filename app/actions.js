@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import {
   NAV_APP_COOKIE,
   NAV_PAGE_COOKIE,
+  menuPageKey,
+  menuPagePath,
   navCookieOptions,
 } from "@/lib/nav-access";
 import { createClient } from "@/lib/supabase/server";
@@ -77,9 +79,11 @@ export async function openMenuPage(pageName) {
     redirect("/landing");
   }
 
-  if (name.toLowerCase() === "permissions") {
-    cookieStore.set(NAV_PAGE_COOKIE, "permissions", navCookieOptions);
-    redirect("/permissions");
+  const path = menuPagePath(name);
+
+  if (path) {
+    cookieStore.set(NAV_PAGE_COOKIE, menuPageKey(name), navCookieOptions);
+    redirect(path);
   }
 
   redirect(`/app-menu?app=${encodeURIComponent(appName)}`);

@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { exitApp, signOut } from "../actions";
 import PermissionsGrid from "./PermissionsGrid";
 import UsersDropdown from "./UsersDropdown";
 import { NAV_APP_COOKIE, NAV_PAGE_COOKIE } from "@/lib/nav-access";
@@ -184,49 +183,29 @@ export default async function PermissionsPage({ searchParams }) {
       );
 
   return (
-    <div className="flex flex-col flex-1 items-center bg-zinc-50 font-sans dark:bg-black">
-      <header className="flex w-full items-center justify-between px-16 py-4">
-        <form action={exitApp}>
-          <button
-            type="submit"
-            className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-          >
-            Exit App
-          </button>
-        </form>
-        <form action={signOut}>
-          <button
-            type="submit"
-            className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-          >
-            Sign Out
-          </button>
-        </form>
-      </header>
-      <main className="flex w-full max-w-5xl flex-col items-start gap-6 px-16 py-4 bg-white dark:bg-black">
-        <h1 className="text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-          Permissions
-        </h1>
-        {usersResult.error ? (
-          <p className="text-sm text-red-700 dark:text-red-400">
-            {usersResult.error.message}
-          </p>
-        ) : (
-          <UsersDropdown users={users} selectedId={selectedUserId} />
-        )}
-        {functionsResult.error ? (
-          <p className="text-sm text-red-700 dark:text-red-400">
-            {functionsResult.error.message}
-          </p>
-        ) : (
-          <PermissionsGrid
-            key={selectedUserId}
-            rows={functionRows}
-            checkedById={checkedById}
-            selectedUserId={selectedUserId}
-          />
-        )}
-      </main>
-    </div>
+    <>
+      <h1 className="text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
+        Permissions
+      </h1>
+      {usersResult.error ? (
+        <p className="text-sm text-red-700 dark:text-red-400">
+          {usersResult.error.message}
+        </p>
+      ) : (
+        <UsersDropdown users={users} selectedId={selectedUserId} />
+      )}
+      {functionsResult.error ? (
+        <p className="text-sm text-red-700 dark:text-red-400">
+          {functionsResult.error.message}
+        </p>
+      ) : (
+        <PermissionsGrid
+          key={selectedUserId}
+          rows={functionRows}
+          checkedById={checkedById}
+          selectedUserId={selectedUserId}
+        />
+      )}
+    </>
   );
 }
