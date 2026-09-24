@@ -118,6 +118,7 @@ const KEY_LABELS = {
   created_at: "Uploaded",
   descr: "Document Type",
   doc_count: "Docs",
+  file_path: "File Path",
 };
 
 function fieldByKey(row, name) {
@@ -141,7 +142,8 @@ function gridColumns(row, labels = COLUMN_LABELS) {
       hidden:
         key.toLowerCase() === "id" ||
         key.toLowerCase() === "file_path" ||
-        label.toLowerCase() === "id",
+        label.toLowerCase() === "id" ||
+        label.toLowerCase() === "file path",
     };
   });
 }
