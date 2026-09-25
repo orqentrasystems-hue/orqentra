@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   addInboundDocument,
   deleteDocument,
@@ -81,6 +81,8 @@ export default function InboundPanel({ options }) {
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadPending, setUploadPending] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
+  const uploadLock = useRef(false);
+  const docsOpenRef = useRef(false);
   const selectedKey = selectedIds.join(",");
 
   useEffect(() => {
@@ -234,6 +236,36 @@ export default function InboundPanel({ options }) {
     };
   }, [docsOpen]);
 
+  useEffect(() => {
+    const wasOpen = docsOpenRef.current;
+    docsOpenRef.current = docsOpen;
+
+    if (!wasOpen || docsOpen || !selectedTradeId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function load() {
+      setTrackingPending(true);
+      const result = await loadInboundItemTracking(selectedTradeId);
+
+      if (cancelled) {
+        return;
+      }
+
+      setTrackingRows(result.rows);
+      setTrackingMessage(result.ok ? "" : result.message);
+      setTrackingPending(false);
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [docsOpen, selectedTradeId]);
+
   return (
     <div className="flex w-full flex-col items-start gap-6">
       <TradeStatusesSelect
@@ -344,6 +376,7 @@ export default function InboundPanel({ options }) {
           addDisabled={!documentTypeId || !uploadFile || !selectedTrackingId}
           onAdd={async () => {
             if (
+              uploadLock.current ||
               uploadPending ||
               !documentTypeId ||
               !uploadFile ||
@@ -352,6 +385,7 @@ export default function InboundPanel({ options }) {
               return;
             }
 
+            uploadLock.current = true;
             setUploadPending(true);
             setUploadMessage("");
 
@@ -363,6 +397,7 @@ export default function InboundPanel({ options }) {
             const result = await addInboundDocument(formData);
 
             if (!result.ok) {
+              uploadLock.current = false;
               setUploadPending(false);
               setUploadMessage(result.message);
               return;
@@ -380,6 +415,8 @@ export default function InboundPanel({ options }) {
               setTrackingRows(tracking.rows);
               setTrackingMessage(tracking.ok ? "" : tracking.message);
             }
+
+            uploadLock.current = false;
           }}
         />
       </InboundCostDialog>

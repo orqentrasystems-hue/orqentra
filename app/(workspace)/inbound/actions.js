@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { NAV_APP_COOKIE, NAV_PAGE_COOKIE } from "@/lib/nav-access";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 function toInteger(value) {
@@ -482,14 +483,27 @@ export async function addInboundDocument(formData) {
       return { ok: false, message: error.message };
     }
 
-    const { error: uploadError } = await supabase.storage
+    const storage = createAdminClient();
+    const objectPath = `inbound_stock_item_tracking/${filename}`;
+    const { error: uploadError } = await storage.storage
       .from("documents_clte_apex")
-      .upload(`inbound_stock_item_tracking/${filename}`, file, {
+      .upload(objectPath, file, {
         upsert: true,
         contentType: file.type || undefined,
       });
 
     if (uploadError) {
+      const { data: listed } = await storage.storage
+        .from("documents_clte_apex")
+        .list("inbound_stock_item_tracking", {
+          search: filename,
+          limit: 20,
+        });
+
+      if (listed?.some((item) => item.name === filename)) {
+        return { ok: true, message: "" };
+      }
+
       return { ok: false, message: uploadError.message };
     }
 
