@@ -29,6 +29,42 @@ function toRows(data) {
   });
 }
 
+function fieldFromRow(row, names) {
+  if (!row || typeof row !== "object") {
+    return "";
+  }
+
+  for (const name of names) {
+    const match = Object.keys(row).find(
+      (key) => key.toLowerCase() === name.toLowerCase(),
+    );
+    const value = match ? row[match] : undefined;
+
+    if (value != null && String(value).trim() !== "") {
+      return String(value);
+    }
+  }
+
+  return "";
+}
+
+function toSelectOptions(data) {
+  return toRows(data)
+    .map((row, index) => {
+      const label = fieldFromRow(row, [
+        "descr",
+        "description",
+        "name",
+        "document_type",
+        "value",
+      ]);
+      const id = fieldFromRow(row, ["id", "document_type_id"]) || label || String(index);
+
+      return { id, label: label || id };
+    })
+    .filter((option) => option.id !== "");
+}
+
 export async function loadInboundTrades(ids) {
   const cookieStore = await cookies();
   const appName = cookieStore.get(NAV_APP_COOKIE)?.value ?? "";
@@ -223,6 +259,46 @@ export async function loadDocumentDetails(inboundStockItemTrackingId) {
   }
 }
 
+export async function loadDocumentTypes() {
+  const cookieStore = await cookies();
+  const appName = cookieStore.get(NAV_APP_COOKIE)?.value ?? "";
+  const allowedPage = cookieStore.get(NAV_PAGE_COOKIE)?.value ?? "";
+
+  if (!appName || allowedPage !== "inbound") {
+    return { ok: false, message: "Open Inbound from the app menu.", options: [] };
+  }
+
+  try {
+    const supabase = await createClient();
+    const { data: session } = await supabase.auth.getClaims();
+
+    if (!session?.claims) {
+      return { ok: false, message: "You must be logged on.", options: [] };
+    }
+
+    const { data, error } = await supabase.rpc("pr_document_types", {
+      p_functional_area_id: 1,
+    });
+
+    if (error) {
+      return { ok: false, message: error.message, options: [] };
+    }
+
+    return {
+      ok: true,
+      message: "",
+      options: JSON.parse(JSON.stringify(toSelectOptions(data))),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Could not load document types.",
+      options: [],
+    };
+  }
+}
+
 function parseStoragePath(filePath) {
   const trimmed = String(filePath ?? "")
     .trim()
@@ -337,6 +413,92 @@ export async function deleteDocument(documentId, filePath) {
       ok: false,
       message:
         error instanceof Error ? error.message : "Could not delete the document.",
+    };
+  }
+}
+
+function fileNameOnly(name) {
+  const text = String(name ?? "")
+    .trim()
+    .replace(/\\/g, "/");
+  const base = text.slice(text.lastIndexOf("/") + 1).trim();
+
+  if (!base || base === "." || base === "..") {
+    return "";
+  }
+
+  return base;
+}
+
+export async function addInboundDocument(formData) {
+  const cookieStore = await cookies();
+  const appName = cookieStore.get(NAV_APP_COOKIE)?.value ?? "";
+  const allowedPage = cookieStore.get(NAV_PAGE_COOKIE)?.value ?? "";
+
+  if (!appName || allowedPage !== "inbound") {
+    return { ok: false, message: "Open Inbound from the app menu." };
+  }
+
+  const documentTypeId = toInteger(formData.get("documentTypeId"));
+  const trackingId = toInteger(formData.get("trackingId"));
+  const file = formData.get("file");
+
+  if (!Number.isInteger(documentTypeId) || documentTypeId <= 0) {
+    return { ok: false, message: "Select a document type." };
+  }
+
+  if (!Number.isInteger(trackingId)) {
+    return { ok: false, message: "Select a tracking item." };
+  }
+
+  if (!(file instanceof File)) {
+    return { ok: false, message: "Select a file." };
+  }
+
+  const filename = fileNameOnly(file.name);
+
+  if (!filename) {
+    return { ok: false, message: "Select a file." };
+  }
+
+  try {
+    const supabase = await createClient();
+    const { data: session } = await supabase.auth.getClaims();
+
+    if (!session?.claims) {
+      return { ok: false, message: "You must be logged on." };
+    }
+
+    const { error } = await supabase.rpc(
+      "pi_document_for_inbound_stock_item_tracking",
+      {
+        p_document_type_id: documentTypeId,
+        p_inbound_stock_item_tracking_id: trackingId,
+        p_filename: filename,
+      },
+    );
+
+    if (error) {
+      return { ok: false, message: error.message };
+    }
+
+    const { error: uploadError } = await supabase.storage
+      .from("documents_clte_apex")
+      .upload(`inbound_stock_item_tracking/${filename}`, file, {
+        upsert: true,
+        contentType: file.type || undefined,
+      });
+
+    if (uploadError) {
+      return { ok: false, message: uploadError.message };
+    }
+
+    return { ok: true, message: "" };
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Could not add the document.",
     };
   }
 }

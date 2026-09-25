@@ -2,15 +2,18 @@
 
 import { useEffect, useState } from "react";
 import {
+  addInboundDocument,
   deleteDocument,
   getDocumentFileUrl,
   loadDocumentDetails,
+  loadDocumentTypes,
   loadInboundCost,
   loadInboundItemTracking,
   loadInboundTrades,
 } from "./actions";
 import DocumentDeleteConfirm from "./DocumentDeleteConfirm";
 import DocumentFileViewer from "./DocumentFileViewer";
+import DocumentUpload from "./DocumentUpload";
 import InboundCostDialog from "./InboundCostDialog";
 import InboundGrid from "./InboundGrid";
 import TradeStatusesSelect from "./TradeStatusesSelect";
@@ -72,6 +75,12 @@ export default function InboundPanel({ options }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deletePending, setDeletePending] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState("");
+  const [documentTypes, setDocumentTypes] = useState([]);
+  const [documentTypeId, setDocumentTypeId] = useState("");
+  const [documentTypesMessage, setDocumentTypesMessage] = useState("");
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadPending, setUploadPending] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState("");
   const selectedKey = selectedIds.join(",");
 
   useEffect(() => {
@@ -195,6 +204,36 @@ export default function InboundPanel({ options }) {
     };
   }, [docsOpen, selectedTrackingId]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      if (!docsOpen) {
+        return;
+      }
+
+      const result = await loadDocumentTypes();
+
+      if (cancelled) {
+        return;
+      }
+
+      setDocumentTypes(result.options);
+      setDocumentTypesMessage(result.ok ? "" : result.message);
+      setDocumentTypeId((current) =>
+        result.options.some((option) => option.id === current)
+          ? current
+          : "",
+      );
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [docsOpen]);
+
   return (
     <div className="flex w-full flex-col items-start gap-6">
       <TradeStatusesSelect
@@ -232,7 +271,11 @@ export default function InboundPanel({ options }) {
       <InboundCostDialog
         open={docsOpen}
         title="Documents"
-        onClose={() => setDocsOpen(false)}
+        onClose={() => {
+          setDocsOpen(false);
+          setUploadFile(null);
+          setUploadMessage("");
+        }}
       >
         <InboundGrid
           title=""
@@ -261,6 +304,82 @@ export default function InboundPanel({ options }) {
             }
 
             setViewerMessage(result.message);
+          }}
+        />
+        <label
+          className="mt-4 flex w-full max-w-md flex-col gap-1"
+          htmlFor="document-type"
+        >
+          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Document Type
+          </span>
+          <select
+            id="document-type"
+            name="document-type"
+            value={documentTypeId}
+            onChange={(event) => setDocumentTypeId(event.target.value)}
+            className="rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
+          >
+            <option value="" />
+            {documentTypes.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {documentTypesMessage ? (
+          <p className="mt-2 text-sm text-red-700 dark:text-red-400">
+            {documentTypesMessage}
+          </p>
+        ) : null}
+        <DocumentUpload
+          file={uploadFile}
+          onFile={(next) => {
+            setUploadFile(next);
+            setUploadMessage("");
+          }}
+          pending={uploadPending}
+          message={uploadMessage}
+          addDisabled={!documentTypeId || !uploadFile || !selectedTrackingId}
+          onAdd={async () => {
+            if (
+              uploadPending ||
+              !documentTypeId ||
+              !uploadFile ||
+              !selectedTrackingId
+            ) {
+              return;
+            }
+
+            setUploadPending(true);
+            setUploadMessage("");
+
+            const formData = new FormData();
+            formData.set("documentTypeId", documentTypeId);
+            formData.set("trackingId", selectedTrackingId);
+            formData.set("file", uploadFile);
+
+            const result = await addInboundDocument(formData);
+
+            if (!result.ok) {
+              setUploadPending(false);
+              setUploadMessage(result.message);
+              return;
+            }
+
+            setUploadFile(null);
+            setUploadPending(false);
+
+            const docs = await loadDocumentDetails(selectedTrackingId);
+            setDocsRows(docs.rows);
+            setDocsMessage(docs.ok ? "" : docs.message);
+
+            if (selectedTradeId) {
+              const tracking = await loadInboundItemTracking(selectedTradeId);
+              setTrackingRows(tracking.rows);
+              setTrackingMessage(tracking.ok ? "" : tracking.message);
+            }
           }}
         />
       </InboundCostDialog>
