@@ -176,6 +176,8 @@ export default function InboundGrid({
   onDocsSelect,
   showViewButton = false,
   onViewFile,
+  showDeleteButton = false,
+  onDeleteFile,
 }) {
   if (message) {
     return (
@@ -242,6 +244,9 @@ export default function InboundGrid({
             ))}
             {showViewButton ? (
               <th className="px-3 py-2 font-medium" aria-label="View" />
+            ) : null}
+            {showDeleteButton ? (
+              <th className="px-3 py-2 font-medium" aria-label="Delete" />
             ) : null}
           </tr>
         </thead>
@@ -310,6 +315,28 @@ export default function InboundGrid({
                       className="rounded border border-zinc-300 bg-white px-3 py-1 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
                     >
                       VIEW
+                    </button>
+                  </td>
+                ) : null}
+                {showDeleteButton ? (
+                  <td className="px-3 py-2 align-middle">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (!onDeleteFile) {
+                          return;
+                        }
+
+                        const path = fieldByKey(row, "file_path");
+                        onDeleteFile({
+                          id,
+                          filePath: path == null ? "" : String(path),
+                        });
+                      }}
+                      className="rounded border border-zinc-300 bg-white px-3 py-1 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    >
+                      DELETE
                     </button>
                   </td>
                 ) : null}

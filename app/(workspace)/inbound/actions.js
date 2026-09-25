@@ -289,3 +289,54 @@ export async function getDocumentFileUrl(filePath) {
     };
   }
 }
+
+export async function deleteDocument(documentId, filePath) {
+  const cookieStore = await cookies();
+  const appName = cookieStore.get(NAV_APP_COOKIE)?.value ?? "";
+  const allowedPage = cookieStore.get(NAV_PAGE_COOKIE)?.value ?? "";
+
+  if (!appName || allowedPage !== "inbound") {
+    return { ok: false, message: "Open Inbound from the app menu." };
+  }
+
+  const id = toBigIntParam(documentId);
+
+  if (id == null) {
+    return { ok: false, message: "Invalid document id." };
+  }
+
+  try {
+    const supabase = await createClient();
+    const { data: session } = await supabase.auth.getClaims();
+
+    if (!session?.claims) {
+      return { ok: false, message: "You must be logged on." };
+    }
+
+    const parsed = parseStoragePath(filePath);
+
+    if (parsed) {
+      const { error: storageError } = await supabase.storage
+        .from(parsed.bucket)
+        .remove([parsed.objectPath]);
+
+      if (storageError) {
+        return { ok: false, message: storageError.message };
+      }
+    }
+
+    const { error } = await supabase.rpc("pd_document", { p_id: id });
+
+    if (error) {
+      return { ok: false, message: error.message };
+    }
+
+    return { ok: true, message: "" };
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Could not delete the document.",
+    };
+  }
+}

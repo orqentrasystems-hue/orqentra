@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import {
+  deleteDocument,
   getDocumentFileUrl,
   loadDocumentDetails,
   loadInboundCost,
   loadInboundItemTracking,
   loadInboundTrades,
 } from "./actions";
+import DocumentDeleteConfirm from "./DocumentDeleteConfirm";
 import DocumentFileViewer from "./DocumentFileViewer";
 import InboundCostDialog from "./InboundCostDialog";
 import InboundGrid from "./InboundGrid";
@@ -67,6 +69,9 @@ export default function InboundPanel({ options }) {
   const [viewerUrl, setViewerUrl] = useState("");
   const [viewerName, setViewerName] = useState("");
   const [viewerMessage, setViewerMessage] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState("");
   const selectedKey = selectedIds.join(",");
 
   useEffect(() => {
@@ -236,6 +241,12 @@ export default function InboundPanel({ options }) {
           pending={docsPending}
           columnLabels={[]}
           showViewButton
+          showDeleteButton
+          onDeleteFile={(target) => {
+            setDeleteTarget(target);
+            setDeletePending(false);
+            setDeleteMessage("");
+          }}
           onViewFile={async (filePath) => {
             setViewerOpen(true);
             setViewerUrl("");
@@ -253,6 +264,54 @@ export default function InboundPanel({ options }) {
           }}
         />
       </InboundCostDialog>
+      <DocumentDeleteConfirm
+        open={Boolean(deleteTarget)}
+        pending={deletePending}
+        message={deleteMessage}
+        onCancel={() => {
+          if (deletePending) {
+            return;
+          }
+
+          setDeleteTarget(null);
+          setDeleteMessage("");
+        }}
+        onConfirm={async () => {
+          if (!deleteTarget || deletePending) {
+            return;
+          }
+
+          setDeletePending(true);
+          setDeleteMessage("");
+          const result = await deleteDocument(
+            deleteTarget.id,
+            deleteTarget.filePath,
+          );
+
+          if (!result.ok) {
+            setDeletePending(false);
+            setDeleteMessage(result.message);
+            return;
+          }
+
+          setDeleteTarget(null);
+          setDeletePending(false);
+          setViewerOpen(false);
+          setViewerUrl("");
+          setViewerName("");
+          setViewerMessage("");
+
+          const docs = await loadDocumentDetails(selectedTrackingId);
+          setDocsRows(docs.rows);
+          setDocsMessage(docs.ok ? "" : docs.message);
+
+          if (selectedTradeId) {
+            const tracking = await loadInboundItemTracking(selectedTradeId);
+            setTrackingRows(tracking.rows);
+            setTrackingMessage(tracking.ok ? "" : tracking.message);
+          }
+        }}
+      />
       <DocumentFileViewer
         open={viewerOpen}
         url={viewerUrl}
