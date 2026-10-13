@@ -70,6 +70,11 @@ export default async function InboundPage() {
   await requireMenuPage("inbound");
 
   const supabase = await createClient();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const userId =
+    claimsData?.claims?.sub ??
+    (await supabase.auth.getUser()).data.user?.id ??
+    "";
   const { data, error } = await supabase.rpc("pr_trade_statuses");
   const options = error ? [] : JSON.parse(JSON.stringify(toOptions(data)));
 
@@ -81,7 +86,7 @@ export default async function InboundPage() {
       {error ? (
         <p className="text-sm text-red-700 dark:text-red-400">{error.message}</p>
       ) : (
-        <InboundPanel options={options} />
+        <InboundPanel options={options} userId={userId} />
       )}
     </>
   );

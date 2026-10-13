@@ -30,7 +30,7 @@ export default async function WorkspaceLayout({ children }) {
     redirect("/");
   }
 
-  const { data, error } = await supabase.rpc("pr_functions_by_app_and_user", {
+  const { data, error } = await supabase.rpc("pr_functions_by_app_and_user_menu", {
     p_user_id: userId,
     p_app_name: appName,
   });
