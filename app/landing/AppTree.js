@@ -1,23 +1,38 @@
 "use client";
 
+import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { openApp, openMenuPage } from "../actions";
-import { menuPagePath } from "@/lib/nav-access";
+import { menuPageKey, menuPagePath } from "@/lib/nav-access";
 
 function isMenuPageNode(label) {
   return Boolean(menuPagePath(label));
 }
 
-function buttonClassName(asButtons, isChild) {
-  if (asButtons) {
+function buttonClassName(asButtons, isChild, variant, selected) {
+  if (variant === "sidebar") {
+    if (!isChild) {
+      return "whitespace-nowrap text-sm font-semibold tracking-wide text-white";
+    }
+
     return [
-      "w-fit rounded border border-zinc-300 bg-white px-4 py-2 text-left text-sm font-medium hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-zinc-700",
-      isChild
-        ? "text-blue-900 dark:text-blue-300"
-        : "text-zinc-800 dark:text-zinc-200",
+      "w-full whitespace-nowrap rounded-r border-l-2 px-3 py-2 text-left text-sm font-medium",
+      selected
+        ? "border-gold-600 bg-navy-800 text-white"
+        : "border-transparent text-white/90 hover:bg-navy-900",
     ].join(" ");
   }
 
-  return "hover:underline text-left";
+  if (asButtons) {
+    return [
+      "w-fit rounded border border-zinc-300 bg-white px-4 py-2 text-left text-sm font-medium text-navy-950 hover:bg-zinc-100",
+      selected ? "border-gold-600 shadow-[inset_0_-2px_0_0_#AD8A40]" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  return "text-left text-navy-950 hover:underline";
 }
 
 function NodeLabel({
@@ -26,13 +41,18 @@ function NodeLabel({
   asButtons,
   isChild,
   label,
+  variant,
+  selected,
   children,
 }) {
-  const className = buttonClassName(asButtons, isChild);
+  const className = buttonClassName(asButtons, isChild, variant, selected);
 
   if (openOnSelect) {
     return (
-      <form action={openApp.bind(null, label)} className={asButtons ? "w-fit" : "inline"}>
+      <form
+        action={openApp.bind(null, label)}
+        className={variant === "sidebar" ? "w-full" : asButtons ? "w-fit" : "inline"}
+      >
         <button
           type="submit"
           className={className}
@@ -48,7 +68,9 @@ function NodeLabel({
     return (
       <form
         action={openMenuPage.bind(null, label)}
-        className={asButtons ? "w-fit" : "inline"}
+        className={
+          variant === "sidebar" ? "w-full" : asButtons ? "w-fit" : "inline"
+        }
       >
         <button
           type="submit"
@@ -64,7 +86,13 @@ function NodeLabel({
   if (asButtons) {
     if (!isChild) {
       return (
-        <span className="w-fit text-sm font-bold text-zinc-800 dark:text-zinc-200">
+        <span
+          className={
+            variant === "sidebar"
+              ? "w-fit whitespace-nowrap text-sm font-semibold tracking-wide text-white"
+              : "w-fit text-sm font-bold text-navy-950"
+          }
+        >
           {children}
         </span>
       );
@@ -80,22 +108,58 @@ function NodeLabel({
   return children;
 }
 
-function TreeNode({ node, openOnSelect, openMenuPages, asButtons }) {
+function TreeNode({
+  node,
+  openOnSelect,
+  openMenuPages,
+  asButtons,
+  variant,
+  selectedPage,
+  defaultOpen,
+}) {
   const hasChildren = node.children?.length > 0;
   const menuPage = openMenuPages && !hasChildren && isMenuPageNode(node.label);
   const isChild = Boolean(node.isChild);
+  const selected =
+    Boolean(selectedPage) && menuPageKey(node.label) === selectedPage;
+  const [open, setOpen] = useState(Boolean(defaultOpen));
+
+  function onToggle(event) {
+    const next = event.currentTarget.open;
+
+    if (next !== open) {
+      setOpen(next);
+    }
+  }
 
   if (asButtons) {
     if (hasChildren) {
       return (
-        <li className="flex w-fit flex-col items-start">
-          <details>
-            <summary className="cursor-pointer select-none">
-              <NodeLabel asButtons isChild={false} label={node.label}>
+        <li className="flex w-full flex-col items-stretch">
+          <details open={open} onToggle={onToggle}>
+            <summary
+              className={
+                variant === "sidebar"
+                  ? "cursor-pointer select-none text-white"
+                  : "cursor-pointer select-none"
+              }
+            >
+              <NodeLabel
+                asButtons
+                isChild={false}
+                label={node.label}
+                variant={variant}
+              >
                 {node.label}
               </NodeLabel>
             </summary>
-            <ul className="mt-2 flex w-fit flex-col items-start gap-2 pl-4">
+            <ul
+              className={
+                variant === "sidebar"
+                  ? "mt-2 flex w-full flex-col items-stretch gap-1"
+                  : "mt-2 flex w-fit flex-col items-start gap-2 pl-4"
+              }
+            >
               {node.children.map((child) => (
                 <TreeNode
                   key={child.id}
@@ -103,6 +167,9 @@ function TreeNode({ node, openOnSelect, openMenuPages, asButtons }) {
                   openOnSelect={openOnSelect}
                   openMenuPages={openMenuPages}
                   asButtons
+                  variant={variant}
+                  selectedPage={selectedPage}
+                  defaultOpen={defaultOpen}
                 />
               ))}
             </ul>
@@ -112,13 +179,21 @@ function TreeNode({ node, openOnSelect, openMenuPages, asButtons }) {
     }
 
     return (
-      <li className="flex w-fit flex-col items-start gap-2">
+      <li
+        className={
+          variant === "sidebar"
+            ? "flex w-full flex-col items-stretch"
+            : "flex w-fit flex-col items-start gap-2"
+        }
+      >
         <NodeLabel
           openOnSelect={openOnSelect}
           menuPage={menuPage}
           asButtons
           isChild={isChild}
           label={node.label}
+          variant={variant}
+          selected={selected}
         >
           {node.label}
         </NodeLabel>
@@ -142,7 +217,7 @@ function TreeNode({ node, openOnSelect, openMenuPages, asButtons }) {
 
   return (
     <li role="treeitem" className="py-1">
-      <details open>
+      <details open={open} onToggle={onToggle}>
         <summary className="cursor-pointer select-none">
           <NodeLabel openOnSelect={openOnSelect} label={node.label}>
             {node.label}
@@ -158,6 +233,9 @@ function TreeNode({ node, openOnSelect, openMenuPages, asButtons }) {
               node={child}
               openOnSelect={openOnSelect}
               openMenuPages={openMenuPages}
+              variant={variant}
+              selectedPage={selectedPage}
+              defaultOpen={defaultOpen}
             />
           ))}
         </ul>
@@ -171,21 +249,39 @@ export default function AppTree({
   openOnSelect = false,
   openMenuPages = false,
   asButtons = false,
+  variant = "default",
+  selectedPage = "",
   emptyMessage = "No apps.",
 }) {
+  const pathname = usePathname();
+  const onAppMenu = pathname === "/app-menu";
+  const activeSelectedPage = onAppMenu ? "" : selectedPage;
+  const defaultOpen = !onAppMenu;
+
   if (!nodes?.length) {
     return (
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">{emptyMessage}</p>
+      <p
+        className={
+          variant === "sidebar"
+            ? "text-sm text-white/70"
+            : "text-sm text-zinc-700"
+        }
+      >
+        {emptyMessage}
+      </p>
     );
   }
 
   return (
     <ul
+      key={onAppMenu ? "app-menu" : "workspace"}
       role={asButtons ? "list" : "tree"}
       className={
         asButtons
-          ? "flex w-fit flex-col items-start gap-3 text-zinc-800 dark:text-zinc-200"
-          : "w-full max-w-md text-zinc-800 dark:text-zinc-200"
+          ? variant === "sidebar"
+            ? "flex w-max flex-col items-stretch gap-3 text-white"
+            : "flex w-fit flex-col items-start gap-3 text-navy-950"
+          : "w-full max-w-md text-navy-950"
       }
     >
       {nodes.map((node) => (
@@ -195,6 +291,9 @@ export default function AppTree({
           openOnSelect={openOnSelect}
           openMenuPages={openMenuPages}
           asButtons={asButtons}
+          variant={variant}
+          selectedPage={activeSelectedPage}
+          defaultOpen={defaultOpen}
         />
       ))}
     </ul>

@@ -184,9 +184,12 @@ export default async function PermissionsPage({ searchParams }) {
 
   return (
     <>
-      <h1 className="text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-        Permissions
-      </h1>
+      <div className="flex flex-col gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight text-navy-950">
+          Permissions
+        </h1>
+        <div className="h-0.5 w-12 bg-gold-600" aria-hidden="true" />
+      </div>
       {usersResult.error ? (
         <p className="text-sm text-red-700 dark:text-red-400">
           {usersResult.error.message}

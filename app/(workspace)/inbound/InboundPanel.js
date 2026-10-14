@@ -38,6 +38,7 @@ import {
   loadInboundLiftToLoad,
   loadInboundLoad,
   loadInboundTrades,
+  loadSaleableVolumeSplit,
   loadItemTrackingStatuses,
   loadLiftStatuses,
   loadLoadStatuses,
@@ -128,23 +129,21 @@ const LOAD_COLUMN_LABELS = [
   "id",
   "Trade Number",
   "Product",
-  "Load Qty",
-  "Actual Load Qty",
   "Load Date",
   "Transport Channel",
   "Contract No.",
   "Uplift No.",
   "Collection Point",
+  "Load Qty",
+  "Unit",
   "Load Status",
   "Exp Compl Date",
-  "Company Name",
-  "Driver",
-  "Truck",
-  "Trailer",
+  "Blend Group Key",
   "Blend Group Key (Lift)",
   "Blend Group Key (Load)",
   "Docs",
   "Notes",
+  "Actual Load Qty",
 ];
 
 const COST_COLUMN_LABELS = [
@@ -203,19 +202,25 @@ function emptyTrackingDraft(
 }
 
 function liftDraftFromTrackingToLift(row) {
+  const suggestedQty =
+    fieldByKey(row, "qty_to_lift_max") ??
+    fieldByKey(row, "qty_to_lift") ??
+    fieldByKey(row, "suggested_qty") ??
+    fieldByKey(row, "qty") ??
+    "";
+
   return {
     inbound_item_tracking: firstField(row, ["id"]),
     trade_number: firstField(row, ["trade_number", "trade_no"]),
     product_name: firstField(row, ["product_name", "product"]),
+    product_id: firstField(row, ["product_id"]),
     unit: firstField(row, ["unit", "local_industry_unit"]),
     blend_grouping_key: firstField(row, [
       "blend_grouping_key",
       "blend_group_key",
     ]),
-    qty_to_lift:
-      fieldByKey(row, "suggested_qty") ?? fieldByKey(row, "qty") ?? "",
-    qty_to_lift_max:
-      fieldByKey(row, "suggested_qty") ?? fieldByKey(row, "qty") ?? "",
+    qty_to_lift: suggestedQty,
+    qty_to_lift_max: suggestedQty,
     remaining_qty_to_lift:
       fieldByKey(row, "lift_over_under") ??
       fieldByKey(row, "qty_still_to_lift") ??
@@ -236,18 +241,56 @@ function emptyTradeDraft() {
   };
 }
 
+function patchDraftRows(rows, patch, index, sharedKeys = []) {
+  const replicate = {};
+
+  for (const key of sharedKeys) {
+    if (Object.prototype.hasOwnProperty.call(patch, key)) {
+      replicate[key] = patch[key];
+    }
+  }
+
+  const shouldReplicate = Object.keys(replicate).length > 0;
+
+  return rows.map((row, rowIndex) => {
+    if (rowIndex === index) {
+      return { ...row, ...patch };
+    }
+
+    if (shouldReplicate) {
+      return { ...row, ...replicate };
+    }
+
+    return row;
+  });
+}
+
 function loadDraftFromLiftToLoad(row) {
+  const suggestedQty =
+    fieldByKey(row, "load_qty_max") ?? fieldByKey(row, "load_qty") ?? "";
+
   return {
     id: firstField(row, ["id"]),
     trade_number: firstField(row, ["trade_number", "trade_no"]),
     product_name: firstField(row, ["product_name", "product"]),
+    product_id: firstField(row, ["product_id"]),
+    unit: firstField(row, ["unit", "local_industry_unit"]),
+    blend_grouping_key: firstField(row, [
+      "blend_grouping_key",
+      "blend_group_key",
+    ]),
     blend_grouping_key_lift: firstField(row, [
       "blend_grouping_key_lift",
       "blend_grouping_lift_key",
     ]),
+    blend_grouping_key_load: firstField(row, [
+      "blend_grouping_key_load",
+      "blend_grouping_load_key",
+    ]),
     contract_number: firstField(row, ["contract_number"]) || "",
     uplift_number: firstField(row, ["uplift_number"]) || "",
-    load_qty: fieldByKey(row, "load_qty") ?? "",
+    load_qty: suggestedQty,
+    load_qty_max: suggestedQty,
     actual_loaded_qty: fieldByKey(row, "actual_loaded_qty") ?? "",
     load_date: isoDateFromValue(fieldByKey(row, "load_date")) || "",
     expected_completion_date:
@@ -863,6 +906,9 @@ export default function InboundPanel({ options, userId = "" }) {
   const [tradeHoverId, setTradeHoverId] = useState("");
   const [tradeEditAllowed, setTradeEditAllowed] = useState(false);
   const tradeEditAllowRef = useRef(null);
+  const [saleableVolumeSplit, setSaleableVolumeSplit] = useState(null);
+  const saleableSplitCacheRef = useRef(new Map());
+  const saleableHoverIdRef = useRef("");
   const [tradeEdit, setTradeEdit] = useState(null);
   const [selectedTradeId, setSelectedTradeId] = useState("");
   const [trackingRows, setTrackingRows] = useState([]);
@@ -1028,6 +1074,30 @@ export default function InboundPanel({ options, userId = "" }) {
   const liftRowSelected = liftRows.some(
     (row) => rowId(row) === String(selectedLiftId) && selectedLiftId !== "",
   );
+
+  async function reloadTrackingAndLiftGrids() {
+    const trackingPromise = selectedTradeId
+      ? (async () => {
+          setTrackingPending(true);
+          const tracking = await loadInboundItemTracking(selectedTradeId);
+          setTrackingRows(tracking.rows);
+          setTrackingMessage(tracking.ok ? "" : tracking.message);
+          setTrackingPending(false);
+        })()
+      : Promise.resolve();
+
+    const liftPromise = selectedBlendGroupKey
+      ? (async () => {
+          setLiftPending(true);
+          const lift = await loadInboundLift(selectedBlendGroupKey);
+          setLiftRows(lift.rows);
+          setLiftMessage(lift.ok ? "" : lift.message);
+          setLiftPending(false);
+        })()
+      : Promise.resolve();
+
+    await Promise.all([trackingPromise, liftPromise]);
+  }
 
   useEffect(() => {
     if (!trackingEdit) {
@@ -2007,6 +2077,52 @@ export default function InboundPanel({ options, userId = "" }) {
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [tradeDraft, tradeEdit, tradeCommitPending]);
 
+  async function onSaleableVolumeEnter(tradeId) {
+    const id = String(tradeId ?? "").trim();
+
+    if (!id) {
+      return;
+    }
+
+    saleableHoverIdRef.current = id;
+    const cached = saleableSplitCacheRef.current.get(id);
+
+    if (cached) {
+      setSaleableVolumeSplit({ tradeId: id, pending: false, ...cached });
+      return;
+    }
+
+    setSaleableVolumeSplit({
+      tradeId: id,
+      pending: true,
+      message: "",
+      rows: [],
+    });
+    const result = await loadSaleableVolumeSplit(id);
+
+    if (saleableHoverIdRef.current !== id) {
+      return;
+    }
+
+    const next = {
+      rows: result.rows,
+      message: result.ok ? "" : result.message,
+    };
+    saleableSplitCacheRef.current.set(id, next);
+    setSaleableVolumeSplit({ tradeId: id, pending: false, ...next });
+  }
+
+  function onSaleableVolumeLeave(tradeId) {
+    const id = String(tradeId ?? "").trim();
+
+    if (saleableHoverIdRef.current !== id) {
+      return;
+    }
+
+    saleableHoverIdRef.current = "";
+    setSaleableVolumeSplit(null);
+  }
+
   return (
     <div className="flex w-full flex-col items-start gap-6">
       <TradeStatusesSelect
@@ -2021,6 +2137,12 @@ export default function InboundPanel({ options, userId = "" }) {
           pending={pending}
           selectedId={selectedTradeId}
           onSelect={setSelectedTradeId}
+          numericLabels={[
+            "Saleable Volume",
+            "Total Trade Delivered",
+            "Progress %",
+          ]}
+          integerNumeric
           headerExtra={
             tradeDraft ? null : (
               <button
@@ -2114,6 +2236,9 @@ export default function InboundPanel({ options, userId = "" }) {
               });
           }}
           onRowLeave={() => setTradeHoverId("")}
+          saleableVolumeSplit={saleableVolumeSplit}
+          onSaleableVolumeEnter={onSaleableVolumeEnter}
+          onSaleableVolumeLeave={onSaleableVolumeLeave}
           onCommitDraft={async () => {
             if (!tradeDraft || tradeCommitPending) {
               return;
@@ -2600,8 +2725,13 @@ export default function InboundPanel({ options, userId = "" }) {
                 setLiftMessage("");
                 setLiftCommitMessage("");
                 setLiftEdit(null);
-                const result =
-                  await loadInboundItemTrackingToLift(groupingKey);
+                const selectedTracking = trackingRows.find(
+                  (row) => rowId(row) === String(selectedTrackingId),
+                );
+                const result = await loadInboundItemTrackingToLift(
+                  groupingKey,
+                  firstField(selectedTracking, ["product_id"]),
+                );
                 setLiftPending(false);
 
                 if (!result.ok) {
@@ -2621,9 +2751,9 @@ export default function InboundPanel({ options, userId = "" }) {
         draftPending={liftCommitPending}
         onDraftChange={(patch, index) => {
           setLiftDrafts((current) =>
-            current.map((row, rowIndex) =>
-              rowIndex === index ? { ...row, ...patch } : row,
-            ),
+            patchDraftRows(current, patch, index, [
+              "supplier_release_number",
+            ]),
           );
           setLiftCommitMessage("");
         }}
@@ -2855,7 +2985,10 @@ export default function InboundPanel({ options, userId = "" }) {
           setLoadEdit(null);
           setLoadCommitPending(false);
 
+          const refreshParents = reloadTrackingAndLiftGrids();
+
           if (!groupingKey) {
+            await refreshParents;
             return;
           }
 
@@ -2864,6 +2997,7 @@ export default function InboundPanel({ options, userId = "" }) {
           setLoadRows(load.rows);
           setLoadMessage(load.ok ? "" : load.message);
           setLoadPending(false);
+          await refreshParents;
         }}
         onRowHover={(id) => {
           setLoadHoverId(id);
@@ -2888,9 +3022,10 @@ export default function InboundPanel({ options, userId = "" }) {
         selectLookupOption={SELECT_LOOKUP}
         onDraftChange={(patch, index) => {
           setLoadDrafts((current) =>
-            current.map((row, rowIndex) =>
-              rowIndex === index ? { ...row, ...patch } : row,
-            ),
+            patchDraftRows(current, patch, index, [
+              "contract_number",
+              "uplift_number",
+            ]),
           );
           setLoadCommitMessage("");
         }}
@@ -2958,6 +3093,29 @@ export default function InboundPanel({ options, userId = "" }) {
             return;
           }
 
+          const qtyValue = Number(
+            String(draft.load_qty ?? "")
+              .trim()
+              .replace(",", "."),
+          );
+          const maxQty = Number(
+            String(draft.load_qty_max ?? "")
+              .trim()
+              .replace(",", "."),
+          );
+
+          if (
+            !Number.isFinite(qtyValue) ||
+            qtyValue < 0 ||
+            !Number.isFinite(maxQty) ||
+            qtyValue > maxQty
+          ) {
+            setLoadCommitMessage(
+              "Load Qty must be between 0 and the suggested quantity.",
+            );
+            return;
+          }
+
           const groupingKey = blendGroupingKey(liftRows, selectedLiftId);
           const liftGroupingKey = blendGroupingKeyLift(
             liftRows,
@@ -2973,6 +3131,7 @@ export default function InboundPanel({ options, userId = "" }) {
             upliftNumber: draft.uplift_number,
             collectionPointId: draft.collection_point_id,
             loadQty: draft.load_qty,
+            maxLoadQty: draft.load_qty_max,
             expectedCompletionDate: draft.expected_completion_date,
             blendGroupingKey: groupingKey,
             blendGroupingKeyLift: liftGroupingKey,
@@ -2990,7 +3149,10 @@ export default function InboundPanel({ options, userId = "" }) {
           );
           setLoadCommitPending(false);
 
+          const refreshParents = reloadTrackingAndLiftGrids();
+
           if (!groupingKey) {
+            await refreshParents;
             return;
           }
 
@@ -2999,6 +3161,7 @@ export default function InboundPanel({ options, userId = "" }) {
           setLoadRows(load.rows);
           setLoadMessage(load.ok ? "" : load.message);
           setLoadPending(false);
+          await refreshParents;
         }}
         onSelect={(id) => {
           setSelectedLoadId(id);
@@ -3486,7 +3649,7 @@ export default function InboundPanel({ options, userId = "" }) {
                   setLoadMessage(load.ok ? "" : load.message);
                 }
               }}
-              className="rounded border border-green-700 bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 disabled:opacity-50 dark:border-green-600 dark:bg-green-600 dark:hover:bg-green-500"
+              className="rounded bg-navy-950 px-4 py-2 text-sm font-medium text-white hover:bg-navy-900 disabled:opacity-50"
             >
               {transportAddPending ? "Adding…" : "Add"}
             </button>
@@ -3549,7 +3712,7 @@ export default function InboundPanel({ options, userId = "" }) {
                   setLoadMessage(load.ok ? "" : load.message);
                 }
               }}
-              className="rounded border border-orange-600 bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-400 disabled:opacity-50 dark:border-orange-500 dark:bg-orange-500 dark:hover:bg-orange-400"
+              className="rounded bg-gold-600 px-4 py-2 text-sm font-medium text-white hover:bg-gold-500 disabled:opacity-50"
             >
               {transportAddPending ? "Saving…" : "Change"}
             </button>

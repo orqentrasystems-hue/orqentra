@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 import { signOut } from "../actions";
+import BrandHeader from "../BrandHeader";
 import AppTree from "./AppTree";
 import { buildAppTree } from "./buildAppTree";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = {
-  title: "Landing",
-  description: "Landing",
+  title: "Applications",
+  description: "CLTE applications",
 };
 
 export const dynamic = "force-dynamic";
@@ -33,29 +34,34 @@ export default async function LandingPage() {
   const nodes = error ? [] : buildAppTree(data);
 
   return (
-    <div className="flex flex-col flex-1 items-center bg-zinc-50 font-sans dark:bg-black">
-      <header className="flex w-full justify-end px-16 py-4">
+    <div className="flex flex-1 flex-col bg-zinc-50 font-sans">
+      <BrandHeader>
         <form action={signOut}>
           <button
             type="submit"
-            className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+            className="rounded bg-navy-950 px-4 py-2 text-sm font-medium text-white hover:bg-navy-900"
           >
             Sign Out
           </button>
         </form>
-      </header>
-      <main className="flex w-full max-w-5xl flex-col items-start gap-6 px-16 py-4 bg-white dark:bg-black">
-        <h1 className="text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-          Landing
-        </h1>
-        {error ? (
-          <p className="text-sm text-red-700 dark:text-red-400">{error.message}</p>
-        ) : (
-          <AppTree
-            nodes={JSON.parse(JSON.stringify(nodes))}
-            openOnSelect
-          />
-        )}
+      </BrandHeader>
+      <main className="flex w-full flex-1 flex-col items-center px-8 py-8">
+        <div className="flex w-full max-w-5xl flex-col items-start gap-6 rounded border border-zinc-300 bg-white p-8 shadow-sm">
+          <div className="flex flex-col gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-navy-950">
+              Applications
+            </h1>
+            <div className="h-0.5 w-12 bg-gold-600" aria-hidden="true" />
+          </div>
+          {error ? (
+            <p className="text-sm text-red-700">{error.message}</p>
+          ) : (
+            <AppTree
+              nodes={JSON.parse(JSON.stringify(nodes))}
+              openOnSelect
+            />
+          )}
+        </div>
       </main>
     </div>
   );

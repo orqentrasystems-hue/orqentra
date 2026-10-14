@@ -14,7 +14,7 @@ export default function LogonForm() {
   return (
     <form action={formAction} className="flex w-full max-w-md flex-col gap-4">
       <label className="flex flex-col gap-1" htmlFor="username">
-        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <span className="text-sm font-medium text-zinc-700">
           Username
         </span>
         <input
@@ -23,11 +23,11 @@ export default function LogonForm() {
           type="text"
           required
           autoComplete="username"
-          className="rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
+          className="rounded border border-zinc-300 bg-white px-3 py-2 text-navy-950"
         />
       </label>
       <label className="flex flex-col gap-1" htmlFor="password">
-        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <span className="text-sm font-medium text-zinc-700">
           Password
         </span>
         <input
@@ -36,19 +36,19 @@ export default function LogonForm() {
           type="password"
           required
           autoComplete="current-password"
-          className="rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
+          className="rounded border border-zinc-300 bg-white px-3 py-2 text-navy-950"
         />
       </label>
       <button
         type="submit"
         disabled={pending}
-        className="rounded bg-zinc-800 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        className="rounded bg-navy-950 px-4 py-2 text-sm font-medium text-white hover:bg-navy-900 disabled:opacity-50"
       >
         {pending ? "Logging on…" : "Log on"}
       </button>
       <Link
         href="/reset-password"
-        className="text-sm font-medium text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+        className="text-sm font-medium text-navy-950 underline hover:text-gold-600"
       >
         Reset Password
       </Link>

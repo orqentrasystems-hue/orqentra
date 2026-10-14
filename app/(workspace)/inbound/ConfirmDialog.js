@@ -44,7 +44,7 @@ export default function ConfirmDialog({
         aria-label={title}
         className="relative z-10 w-full max-w-md rounded border border-zinc-300 bg-white p-6 shadow-lg dark:border-zinc-600 dark:bg-zinc-900"
       >
-        <h2 className="text-lg font-semibold text-black dark:text-zinc-50">
+        <h2 className="text-lg font-semibold text-navy-950">
           {title}
         </h2>
         <p className="mt-3 whitespace-pre-line text-sm text-zinc-700 dark:text-zinc-300">

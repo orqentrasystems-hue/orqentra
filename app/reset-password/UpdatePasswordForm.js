@@ -17,7 +17,7 @@ export default function UpdatePasswordForm() {
   return (
     <form action={formAction} className="flex w-full max-w-md flex-col gap-4">
       <label className="flex flex-col gap-1" htmlFor="password">
-        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <span className="text-sm font-medium text-zinc-700">
           New password
         </span>
         <input
@@ -26,11 +26,11 @@ export default function UpdatePasswordForm() {
           type="password"
           required
           autoComplete="new-password"
-          className="rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
+          className="rounded border border-zinc-300 bg-white px-3 py-2 text-navy-950"
         />
       </label>
       <label className="flex flex-col gap-1" htmlFor="confirm">
-        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <span className="text-sm font-medium text-zinc-700">
           Confirm password
         </span>
         <input
@@ -39,13 +39,13 @@ export default function UpdatePasswordForm() {
           type="password"
           required
           autoComplete="new-password"
-          className="rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
+          className="rounded border border-zinc-300 bg-white px-3 py-2 text-navy-950"
         />
       </label>
       <button
         type="submit"
         disabled={pending}
-        className="rounded bg-zinc-800 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        className="rounded bg-navy-950 px-4 py-2 text-sm font-medium text-white hover:bg-navy-900 disabled:opacity-50"
       >
         {pending ? "Updating…" : "Update password"}
       </button>

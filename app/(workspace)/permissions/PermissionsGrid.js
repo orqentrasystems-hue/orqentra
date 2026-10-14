@@ -178,7 +178,7 @@ export default function PermissionsGrid({ rows, checkedById, selectedUserId }) {
       <div className="w-full overflow-x-auto">
         <table className="w-full border-collapse text-left text-sm text-zinc-800 dark:text-zinc-200">
           <thead>
-            <tr className="border-b border-zinc-300 dark:border-zinc-600">
+            <tr className="border-b border-zinc-300 bg-zinc-50 text-navy-950">
               {headerCells(columns, hasFunctionColumn)}
             </tr>
           </thead>
@@ -236,7 +236,7 @@ export default function PermissionsGrid({ rows, checkedById, selectedUserId }) {
         <button
           type="submit"
           disabled={savePending}
-          className="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+          className="rounded bg-navy-950 px-4 py-2 text-sm font-medium text-white hover:bg-navy-900 disabled:opacity-50"
         >
           {savePending ? "Saving…" : "Save"}
         </button>

@@ -148,6 +148,54 @@ export async function loadInboundTrades(ids) {
   }
 }
 
+export async function loadSaleableVolumeSplit(tradeId) {
+  const cookieStore = await cookies();
+  const appName = cookieStore.get(NAV_APP_COOKIE)?.value ?? "";
+  const allowedPage = cookieStore.get(NAV_PAGE_COOKIE)?.value ?? "";
+
+  if (!appName || allowedPage !== "inbound") {
+    return { ok: false, message: "Open Inbound from the app menu.", rows: [] };
+  }
+
+  const inboundTradeId = toBigIntParam(tradeId);
+
+  if (inboundTradeId == null || inboundTradeId === "") {
+    return { ok: false, message: "Missing trade id.", rows: [] };
+  }
+
+  try {
+    const supabase = await createClient();
+    const { data: session } = await supabase.auth.getClaims();
+
+    if (!session?.claims) {
+      return { ok: false, message: "You must be logged on.", rows: [] };
+    }
+
+    const { data, error } = await supabase.rpc("pr_rpt_saleable_volume_split", {
+      p_trade_id: inboundTradeId,
+    });
+
+    if (error) {
+      return { ok: false, message: error.message, rows: [] };
+    }
+
+    return {
+      ok: true,
+      message: "",
+      rows: JSON.parse(JSON.stringify(toRows(data))),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Could not load saleable volume split.",
+      rows: [],
+    };
+  }
+}
+
 export async function addInboundTrade(description) {
   const cookieStore = await cookies();
   const appName = cookieStore.get(NAV_APP_COOKIE)?.value ?? "";
@@ -629,7 +677,10 @@ export async function loadInboundItemTracking(inboundTradeId) {
   }
 }
 
-export async function loadInboundItemTrackingToLift(groupingKey) {
+export async function loadInboundItemTrackingToLift(
+  groupingKey,
+  productId,
+) {
   const cookieStore = await cookies();
   const appName = cookieStore.get(NAV_APP_COOKIE)?.value ?? "";
   const allowedPage = cookieStore.get(NAV_PAGE_COOKIE)?.value ?? "";
@@ -639,6 +690,7 @@ export async function loadInboundItemTrackingToLift(groupingKey) {
   }
 
   const blendGroupKey = toInteger(groupingKey);
+  const fallbackProductId = toBigIntParam(productId);
 
   if (!Number.isInteger(blendGroupKey)) {
     return { ok: false, message: "Missing blend group key.", rows: [] };
@@ -663,10 +715,69 @@ export async function loadInboundItemTrackingToLift(groupingKey) {
       return { ok: false, message: error.message, rows: [] };
     }
 
+    const rows = toRows(data);
+    const suggested = await Promise.all(
+      rows.map(async (row) => {
+        const rowProductId =
+          toBigIntParam(fieldFromRow(row, ["product_id"])) ??
+          fallbackProductId;
+        const rowBlendKey =
+          toInteger(
+            fieldFromRow(row, ["blend_grouping_key", "blend_group_key"]),
+          ) || blendGroupKey;
+
+        if (rowProductId == null) {
+          return { ok: false, message: "Missing product id." };
+        }
+
+        if (!Number.isInteger(rowBlendKey)) {
+          return { ok: false, message: "Missing blend group key." };
+        }
+
+        const { data: qtyData, error: qtyError } = await supabase.rpc(
+          "pr_qty_to_suggest_item_tracking_vs_lift",
+          {
+            p_product_id: rowProductId,
+            p_blend_grouping_key: rowBlendKey,
+          },
+        );
+
+        if (qtyError) {
+          return { ok: false, message: qtyError.message };
+        }
+
+        const qty = toSuggestedQty(qtyData);
+
+        if (!Number.isFinite(qty)) {
+          return {
+            ok: false,
+            message: "Could not suggest a lift quantity.",
+          };
+        }
+
+        return {
+          ok: true,
+          row: {
+            ...row,
+            product_id: rowProductId,
+            suggested_qty: qty,
+            qty_to_lift: qty,
+            qty_to_lift_max: qty,
+          },
+        };
+      }),
+    );
+
+    const failed = suggested.find((item) => !item.ok);
+
+    if (failed) {
+      return { ok: false, message: failed.message, rows: [] };
+    }
+
     return {
       ok: true,
       message: "",
-      rows: JSON.parse(JSON.stringify(toRows(data))),
+      rows: JSON.parse(JSON.stringify(suggested.map((item) => item.row))),
     };
   } catch (error) {
     return {
@@ -711,10 +822,68 @@ export async function loadInboundLiftToLoad(blendGroupingLiftKey) {
       return { ok: false, message: error.message, rows: [] };
     }
 
+    const rows = toRows(data);
+    const suggested = await Promise.all(
+      rows.map(async (row) => {
+        const productId = toBigIntParam(fieldFromRow(row, ["product_id"]));
+        const rowBlendKey = toInteger(
+          fieldFromRow(row, [
+            "blend_grouping_key_lift",
+            "blend_grouping_lift_key",
+          ]),
+        );
+
+        if (productId == null) {
+          return { ok: false, message: "Missing product id." };
+        }
+
+        if (!Number.isInteger(rowBlendKey)) {
+          return { ok: false, message: "Missing blend group key (lift)." };
+        }
+
+        const { data: qtyData, error: qtyError } = await supabase.rpc(
+          "pr_qty_to_suggest_item_lift_vs_load",
+          {
+            p_product_id: productId,
+            p_blend_grouping_key_lift: rowBlendKey,
+          },
+        );
+
+        if (qtyError) {
+          return { ok: false, message: qtyError.message };
+        }
+
+        const qty = toSuggestedQty(qtyData);
+
+        if (!Number.isFinite(qty)) {
+          return {
+            ok: false,
+            message: "Could not suggest a load quantity.",
+          };
+        }
+
+        return {
+          ok: true,
+          row: {
+            ...row,
+            product_id: productId,
+            load_qty: qty,
+            load_qty_max: qty,
+          },
+        };
+      }),
+    );
+
+    const failed = suggested.find((item) => !item.ok);
+
+    if (failed) {
+      return { ok: false, message: failed.message, rows: [] };
+    }
+
     return {
       ok: true,
       message: "",
-      rows: JSON.parse(JSON.stringify(toRows(data))),
+      rows: JSON.parse(JSON.stringify(suggested.map((item) => item.row))),
     };
   } catch (error) {
     return {
@@ -811,6 +980,7 @@ export async function addInboundLoad({
   upliftNumber,
   collectionPointId,
   loadQty,
+  maxLoadQty,
   expectedCompletionDate,
   blendGroupingKey,
   blendGroupingKeyLift,
@@ -829,6 +999,7 @@ export async function addInboundLoad({
   const nextExpectedDate = String(expectedCompletionDate ?? "").trim();
   const nextCollectionPointId = toInteger(collectionPointId);
   const loadQtyValue = toNumeric(loadQty);
+  const maxQty = toNumeric(maxLoadQty);
   const actualQtyValue = toNumeric(actualLoadedQty);
   const blendKey = toInteger(blendGroupingKey);
   const liftBlendKey = toInteger(blendGroupingKeyLift);
@@ -845,8 +1016,16 @@ export async function addInboundLoad({
     return { ok: false, message: "Select a collection point." };
   }
 
-  if (!Number.isFinite(loadQtyValue)) {
-    return { ok: false, message: "Enter a load quantity." };
+  if (
+    !Number.isFinite(loadQtyValue) ||
+    loadQtyValue < 0 ||
+    !Number.isFinite(maxQty) ||
+    loadQtyValue > maxQty
+  ) {
+    return {
+      ok: false,
+      message: "Load Qty must be between 0 and the suggested quantity.",
+    };
   }
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(nextExpectedDate)) {
@@ -1872,6 +2051,39 @@ function toNumeric(value) {
       .replace(",", "."),
   );
   return Number.isFinite(n) ? n : NaN;
+}
+
+function toSuggestedQty(data) {
+  if (data == null) {
+    return NaN;
+  }
+
+  if (typeof data === "number" && Number.isFinite(data)) {
+    return data;
+  }
+
+  if (typeof data === "bigint") {
+    return Number(data);
+  }
+
+  if (Array.isArray(data)) {
+    return data.length ? toSuggestedQty(data[0]) : NaN;
+  }
+
+  if (typeof data === "object") {
+    return toSuggestedQty(
+      data.pr_qty_to_suggest_item_tracking_vs_lift ??
+        data.pr_qty_to_suggest_item_lift_vs_load ??
+        data.suggested_qty ??
+        data.load_qty ??
+        data.qty_to_lift ??
+        data.qty ??
+        data.value ??
+        Object.values(data)[0],
+    );
+  }
+
+  return toNumeric(data);
 }
 
 export async function addInboundCost({

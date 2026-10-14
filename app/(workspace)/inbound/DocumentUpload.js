@@ -32,8 +32,8 @@ export default function DocumentUpload({
         className={[
           "flex min-h-28 w-full items-center justify-center rounded border-2 border-dashed px-4 py-6 text-center text-sm",
           dragOver
-            ? "border-blue-700 bg-blue-50 text-blue-900 dark:border-blue-400 dark:bg-zinc-800 dark:text-blue-200"
-            : "border-zinc-400 text-zinc-600 dark:border-zinc-500 dark:text-zinc-400",
+            ? "border-gold-600 bg-zinc-50 text-navy-950"
+            : "border-zinc-300 text-zinc-700",
         ].join(" ")}
       >
         {file
@@ -65,7 +65,7 @@ export default function DocumentUpload({
           type="button"
           disabled={addDisabled || pending}
           onClick={onAdd}
-          className="rounded border border-zinc-800 bg-zinc-800 px-3 py-1 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:border-zinc-200 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          className="rounded bg-navy-950 px-3 py-1 text-sm font-medium text-white hover:bg-navy-900 disabled:opacity-50"
         >
           {pending ? "Adding…" : "Add"}
         </button>

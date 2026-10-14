@@ -1,4 +1,9 @@
-function formatNumberMask(value) {
+"use client";
+
+import { useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+function formatNumberMask(value, { decimals = 2 } = {}) {
   if (value == null || value === "") {
     return "";
   }
@@ -12,7 +17,17 @@ function formatNumberMask(value) {
     return String(value);
   }
 
-  const [intPart, decPart] = n.toFixed(2).split(".");
+  if (decimals <= 0) {
+    const rounded = Math.round(n);
+    const sign = rounded < 0 ? "-" : "";
+    const grouped = String(Math.abs(rounded)).replace(
+      /\B(?=(\d{3})+(?!\d))/g,
+      " ",
+    );
+    return `${sign}${grouped}`;
+  }
+
+  const [intPart, decPart] = n.toFixed(decimals).split(".");
   const sign = intPart.startsWith("-") ? "-" : "";
   const grouped = intPart.replace("-", "").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 
@@ -88,14 +103,20 @@ function formatDateTimeMask(value) {
 
 function formatCell(
   value,
-  { numeric = false, date = false, dateTime = false, zeroIfNull = false } = {},
+  {
+    numeric = false,
+    integer = false,
+    date = false,
+    dateTime = false,
+    zeroIfNull = false,
+  } = {},
 ) {
   if (zeroIfNull && (value == null || value === "")) {
     return "0";
   }
 
   if (numeric) {
-    return formatNumberMask(value);
+    return formatNumberMask(value, { decimals: integer ? 0 : 2 });
   }
 
   if (dateTime) {
@@ -411,6 +432,7 @@ function gridColumns(row, labels = COLUMN_LABELS) {
     "product_id",
     "inbound_item_tracking",
     "qty_to_lift_max",
+    "load_qty_max",
   ]);
   const rowKeys = new Set(
     Object.keys(row).map((key) => key.toLowerCase()),
@@ -688,6 +710,260 @@ function isTrackingEthanolColumn(column) {
   );
 }
 
+function isNumericCellValue(value) {
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const text = value.trim();
+
+  if (text === "") {
+    return false;
+  }
+
+  return Number.isFinite(Number(text.replace(/\s/g, "").replace(",", ".")));
+}
+
+function isNonNumericTradeColumn(column) {
+  const { label, key } = columnLabelKey(column);
+  return (
+    key === "id" ||
+    label === "id" ||
+    label === "trade number" ||
+    key === "trade_number" ||
+    label === "description" ||
+    key === "description" ||
+    label.includes("status") ||
+    key.includes("status") ||
+    label === "unit of measure" ||
+    key.includes("unit")
+  );
+}
+
+function isSaleableVolumeColumn(column) {
+  const { label, key } = columnLabelKey(column);
+  return (
+    label === "saleable volume" ||
+    key === "saleable_volume" ||
+    key === "saleable_qty"
+  );
+}
+
+const SALEABLE_SPLIT_HIDDEN = new Set([
+  "id",
+  "trade_id",
+  "p_trade_id",
+  "inbound_trade_id",
+]);
+
+function saleableSplitColumns(rows) {
+  const row = rows.find((item) => item && typeof item === "object");
+
+  if (!row) {
+    return [];
+  }
+
+  return Object.keys(row).filter(
+    (key) => !SALEABLE_SPLIT_HIDDEN.has(key.toLowerCase()),
+  );
+}
+
+function saleableSplitLabel(key) {
+  const mapped = KEY_LABELS[key.toLowerCase()];
+
+  if (mapped) {
+    return mapped;
+  }
+
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function saleableSplitNumeric(rows, key) {
+  return rows.some((row) => {
+    const value = row?.[key];
+
+    if (value == null || value === "") {
+      return false;
+    }
+
+    if (typeof value === "number") {
+      return Number.isFinite(value);
+    }
+
+    const n = Number(String(value).trim().replace(/\s/g, "").replace(",", "."));
+    return Number.isFinite(n) && String(value).trim() !== "";
+  });
+}
+
+function SaleableVolumeBubble({ cellRef, open, pending, message, rows }) {
+  const [coords, setCoords] = useState(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setCoords(null);
+      return undefined;
+    }
+
+    function update() {
+      const rect = cellRef.current?.getBoundingClientRect();
+
+      if (!rect) {
+        return;
+      }
+
+      const placeBelow = rect.top < 200;
+      setCoords({
+        left: Math.min(
+          Math.max(rect.left + rect.width / 2, 12),
+          window.innerWidth - 12,
+        ),
+        top: placeBelow ? rect.bottom + 6 : rect.top - 6,
+        placeBelow,
+      });
+    }
+
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [cellRef, open, pending, rows]);
+
+  if (!open || !coords || typeof document === "undefined") {
+    return null;
+  }
+
+  const columns = saleableSplitColumns(rows ?? []);
+
+  return createPortal(
+    <div
+      className="pointer-events-none fixed z-50 max-w-[min(36rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded border border-zinc-300 bg-white shadow-lg dark:border-zinc-600 dark:bg-zinc-900"
+      style={{
+        left: coords.left,
+        top: coords.top,
+        transform: coords.placeBelow
+          ? "translate(-50%, 0)"
+          : "translate(-50%, -100%)",
+      }}
+    >
+      {coords.placeBelow ? null : (
+        <span
+          aria-hidden="true"
+          className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-300 dark:border-t-zinc-600"
+        />
+      )}
+      {coords.placeBelow ? (
+        <span
+          aria-hidden="true"
+          className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-zinc-300 dark:border-b-zinc-600"
+        />
+      ) : null}
+      <div className="max-h-64 overflow-auto p-2">
+        {pending ? (
+          <p className="px-1 py-0.5 text-xs text-zinc-600 dark:text-zinc-400">
+            Loading…
+          </p>
+        ) : message ? (
+          <p className="px-1 py-0.5 text-xs text-red-700 dark:text-red-400">
+            {message}
+          </p>
+        ) : !rows?.length || !columns.length ? (
+          <p className="px-1 py-0.5 text-xs text-zinc-600 dark:text-zinc-400">
+            No rows.
+          </p>
+        ) : (
+          <table className="border-collapse text-left text-xs text-zinc-800 dark:text-zinc-200">
+            <thead>
+              <tr className="border-b border-zinc-300 bg-zinc-50 text-navy-950 dark:border-zinc-600 dark:bg-zinc-800">
+                {columns.map((key) => (
+                  <th
+                    key={key}
+                    className={[
+                      "whitespace-nowrap px-2 py-1 font-bold",
+                      saleableSplitNumeric(rows, key) ? "text-right" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    {saleableSplitLabel(key)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => (
+                <tr
+                  key={`${rowId(row) || "row"}-${index}`}
+                  className="border-b border-zinc-200 last:border-b-0 dark:border-zinc-700"
+                >
+                  {columns.map((key) => {
+                    const numeric = saleableSplitNumeric(rows, key);
+
+                    return (
+                      <td
+                        key={key}
+                        className={[
+                          "whitespace-nowrap px-2 py-1",
+                          numeric ? "text-right tabular-nums" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        {formatCell(row[key], { numeric })}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function SaleableVolumeCell({
+  id,
+  className,
+  onClick,
+  formatted,
+  split,
+  onEnter,
+  onLeave,
+}) {
+  const cellRef = useRef(null);
+  const open = Boolean(split && split.tradeId === id);
+
+  return (
+    <td
+      ref={cellRef}
+      className={className}
+      onClick={onClick}
+      onMouseEnter={() => onEnter?.(id)}
+      onMouseLeave={() => onLeave?.(id)}
+    >
+      {formatted}
+      <SaleableVolumeBubble
+        cellRef={cellRef}
+        open={open}
+        pending={split?.pending}
+        message={split?.message}
+        rows={split?.rows}
+      />
+    </td>
+  );
+}
+
 function qtyCubesTip(value) {
   const n =
     typeof value === "number"
@@ -896,11 +1172,30 @@ function loadDraftCellValue(values, column) {
     return values.product_name ?? "";
   }
 
+  if (label === "unit" || key === "unit" || key === "local_industry_unit") {
+    return values.unit ?? "";
+  }
+
+  if (
+    label === "blend group key" ||
+    key === "blend_grouping_key" ||
+    key === "blend_group_key"
+  ) {
+    return values.blend_grouping_key ?? "";
+  }
+
   if (
     label === "blend group key (lift)" ||
     key === "blend_grouping_key_lift"
   ) {
     return values.blend_grouping_key_lift ?? "";
+  }
+
+  if (
+    label === "blend group key (load)" ||
+    key === "blend_grouping_key_load"
+  ) {
+    return values.blend_grouping_key_load ?? "";
   }
 
   if (isLoadContractNoColumn(column)) {
@@ -1003,6 +1298,34 @@ function isLoadEditableColumn(column) {
   );
 }
 
+function isAllowedSuggestedQtyInput(text, maxValue) {
+  if (maxValue == null || String(maxValue).trim() === "") {
+    return true;
+  }
+
+  const raw = String(text ?? "").trim();
+
+  if (raw === "" || raw === "." || raw === ",") {
+    return true;
+  }
+
+  if (!/^\d*([.,]\d*)?$/.test(raw)) {
+    return false;
+  }
+
+  const qty = Number(raw.replace(",", "."));
+
+  if (!Number.isFinite(qty) || qty < 0) {
+    return false;
+  }
+
+  const max = Number(
+    String(maxValue).trim().replace(/\s/g, "").replace(",", "."),
+  );
+
+  return !Number.isFinite(max) || qty <= max;
+}
+
 function LoadDraftCell({
   column,
   values,
@@ -1014,7 +1337,7 @@ function LoadDraftCell({
 }) {
   if (isLoadContractNoColumn(column)) {
     return (
-      <input
+      <ClearableInput
         aria-label="Contract No."
         type="text"
         value={values.contract_number ?? ""}
@@ -1029,7 +1352,7 @@ function LoadDraftCell({
 
   if (isLoadUpliftNoColumn(column)) {
     return (
-      <input
+      <ClearableInput
         aria-label="Uplift No."
         type="text"
         value={values.uplift_number ?? ""}
@@ -1044,15 +1367,21 @@ function LoadDraftCell({
 
   if (isLoadQtyColumn(column)) {
     return (
-      <input
+      <ClearableInput
         aria-label="Load Qty"
         type="text"
         inputMode="decimal"
         value={values.load_qty ?? ""}
         disabled={disabled}
-        onChange={(event) =>
-          onChange?.({ load_qty: event.target.value }, draftIndex)
-        }
+        onChange={(event) => {
+          const next = event.target.value;
+
+          if (!isAllowedSuggestedQtyInput(next, values.load_qty_max)) {
+            return;
+          }
+
+          onChange?.({ load_qty: next }, draftIndex);
+        }}
         className={`${DRAFT_INPUT_CLASS} text-right tabular-nums`}
       />
     );
@@ -1060,7 +1389,7 @@ function LoadDraftCell({
 
   if (isLoadActualQtyColumn(column)) {
     return (
-      <input
+      <ClearableInput
         aria-label="Actual Load Qty"
         type="text"
         inputMode="decimal"
@@ -1232,6 +1561,45 @@ const DRAFT_INPUT_CLASS = `w-full min-w-24 ${DRAFT_CONTROL_CLASS}`;
 
 const DRAFT_DATE_CLASS = `w-[90%] min-w-0 ${DRAFT_CONTROL_CLASS}`;
 
+function ClearableInput({
+  value,
+  onChange,
+  disabled,
+  className,
+  wrapperClassName = "w-full",
+  style,
+  ...props
+}) {
+  return (
+    <span className={`relative inline-flex min-w-0 ${wrapperClassName}`}>
+      <input
+        {...props}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        className={className}
+        style={{ paddingRight: "1.05rem", ...style }}
+      />
+      {disabled ? null : (
+        <button
+          type="button"
+          aria-label="Clear"
+          tabIndex={-1}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onChange?.({ target: { value: "" } });
+          }}
+          className="absolute top-0 right-0 z-10 flex h-3.5 w-3.5 items-center justify-center text-[11px] leading-none text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        >
+          ×
+        </button>
+      )}
+    </span>
+  );
+}
+
 const DRAFT_PRODUCT_SELECT_CLASS = `box-content w-[7ch] min-w-[7ch] max-w-[7ch] px-1 ${DRAFT_CONTROL_CLASS}`;
 
 const DRAFT_CURRENCY_SELECT_CLASS = `box-content w-[5ch] min-w-[5ch] max-w-[5ch] px-1 ${DRAFT_CONTROL_CLASS}`;
@@ -1339,7 +1707,7 @@ function TrackingDraftCell({
     }
 
     return (
-      <input
+      <ClearableInput
         aria-label="Ethanol %"
         type="text"
         inputMode="decimal"
@@ -1354,6 +1722,7 @@ function TrackingDraftCell({
 
           onChange?.({ ethanolPercent: next });
         }}
+        wrapperClassName="w-auto"
         className="box-content w-[3ch] min-w-[3ch] rounded border border-zinc-300 bg-white px-1 py-1 text-right text-sm tabular-nums text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
       />
     );
@@ -1365,7 +1734,7 @@ function TrackingDraftCell({
     }
 
     return (
-      <input
+      <ClearableInput
         aria-label="Qty (litres)"
         type="number"
         step="any"
@@ -1450,7 +1819,7 @@ function TrackingDraftCell({
 
   if (isTrackingSuppInvNoColumn(column)) {
     return (
-      <input
+      <ClearableInput
         aria-label="Supp_Inv_No."
         type="text"
         value={values.suppInvNo}
@@ -1463,7 +1832,7 @@ function TrackingDraftCell({
 
   if (isTrackingSuppInvAmtColumn(column)) {
     return (
-      <input
+      <ClearableInput
         aria-label="Supp_Inv_Amt."
         type="number"
         step="any"
@@ -1505,14 +1874,14 @@ export function GridFrame({ title, headerExtra = null, frameRef, children }) {
       {title || headerExtra ? (
         <div className="mb-2 flex items-center gap-4">
           {title ? (
-            <h2 className="text-lg font-semibold text-black dark:text-zinc-50">
+            <h2 className="text-lg font-semibold text-navy-950">
               {title}
             </h2>
           ) : null}
           {headerExtra}
         </div>
       ) : null}
-      <div className="w-full overflow-x-auto rounded border border-zinc-400 dark:border-zinc-500">
+      <div className="w-full overflow-x-auto rounded border border-zinc-300">
         {children}
       </div>
     </div>
@@ -1528,6 +1897,7 @@ export default function InboundGrid({
   title = "Inbound Trades",
   columnLabels = COLUMN_LABELS,
   numericLabels = [],
+  integerNumeric = false,
   dateLabels = [],
   dateTimeLabels = [],
   onDocsSelect,
@@ -1574,6 +1944,9 @@ export default function InboundGrid({
   collectionPointOptions = [],
   hideEthanolColumn = false,
   hideUnitColumn = false,
+  saleableVolumeSplit = null,
+  onSaleableVolumeEnter,
+  onSaleableVolumeLeave,
 }) {
   const activeDrafts =
     Array.isArray(draftRows) && draftRows.length
@@ -1692,7 +2065,7 @@ export default function InboundGrid({
     <GridFrame title={title} headerExtra={headerExtra} frameRef={frameRef}>
       <table className="w-full border-collapse text-left text-sm text-zinc-800 dark:text-zinc-200">
         <thead>
-          <tr className="border-b border-zinc-300 dark:border-zinc-600">
+          <tr className="border-b border-zinc-300 bg-zinc-50 text-navy-950">
             {columns.map((column) => (
               <th
                 key={column.key}
@@ -1713,7 +2086,7 @@ export default function InboundGrid({
                     ? "cursor-default text-blue-900 underline dark:text-blue-300"
                     : "",
                   isOverUnderColumn(column)
-                    ? "group relative cursor-pointer text-blue-900 underline dark:text-blue-300"
+                    ? "group relative cursor-pointer text-gold-600 underline"
                     : "",
                   unassignedHeaderTip(column, draftKind)
                     ? "group relative"
@@ -1813,22 +2186,33 @@ export default function InboundGrid({
                       />
                     ) : draftKind === "lift" ? (
                       isLiftQtyToLiftColumn(column) ? (
-                        <input
+                        <ClearableInput
                           aria-label="Qty to Lift"
                           type="text"
                           inputMode="decimal"
                           value={draft.qty_to_lift ?? ""}
                           disabled={draftPending}
-                          onChange={(event) =>
+                          onChange={(event) => {
+                            const next = event.target.value;
+
+                            if (
+                              !isAllowedSuggestedQtyInput(
+                                next,
+                                draft.qty_to_lift_max,
+                              )
+                            ) {
+                              return;
+                            }
+
                             onDraftChange?.(
-                              { qty_to_lift: event.target.value },
+                              { qty_to_lift: next },
                               draftIndex,
-                            )
-                          }
+                            );
+                          }}
                           className={`${DRAFT_INPUT_CLASS} text-right tabular-nums`}
                         />
                       ) : isLiftSupplierReleaseColumn(column) ? (
-                        <input
+                        <ClearableInput
                           aria-label="Supplier Release Number"
                           type="text"
                           value={draft.supplier_release_number ?? ""}
@@ -1875,7 +2259,7 @@ export default function InboundGrid({
                         ))}
                       </select>
                     ) : descriptionColumn ? (
-                      <input
+                      <ClearableInput
                         aria-label="Description"
                         type="text"
                         value={draft.description}
@@ -1886,7 +2270,7 @@ export default function InboundGrid({
                         className={DRAFT_INPUT_CLASS}
                       />
                     ) : amountColumn ? (
-                      <input
+                      <ClearableInput
                         aria-label="Amount"
                         type="number"
                         step="any"
@@ -1899,7 +2283,7 @@ export default function InboundGrid({
                         className={`${DRAFT_INPUT_CLASS} text-right tabular-nums`}
                       />
                     ) : qtyColumn ? (
-                      <input
+                      <ClearableInput
                         aria-label="Qty"
                         type="number"
                         step="any"
@@ -1980,7 +2364,9 @@ export default function InboundGrid({
                   selectable
                     ? "cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800"
                     : "",
-                  selected ? "bg-zinc-100 dark:bg-zinc-800" : "",
+                  selected
+                    ? "bg-zinc-100 shadow-[inset_4px_0_0_0_#AD8A40]"
+                    : "",
                   voidRow
                     ? "[&>td]:line-through [&>td]:decoration-zinc-700 [&_button]:line-through dark:[&>td]:decoration-zinc-300"
                     : "",
@@ -2035,7 +2421,7 @@ export default function InboundGrid({
                         className="px-3 py-2 align-middle"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <input
+                        <ClearableInput
                           aria-label="Description"
                           type="text"
                           value={editRow.description}
@@ -2092,7 +2478,7 @@ export default function InboundGrid({
                         className="px-3 py-2 align-middle text-right"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <input
+                        <ClearableInput
                           aria-label="Qty to Lift"
                           type="text"
                           inputMode="decimal"
@@ -2118,7 +2504,7 @@ export default function InboundGrid({
                         className="px-3 py-2 align-middle"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <input
+                        <ClearableInput
                           aria-label="Supplier Release Number"
                           type="text"
                           value={editRow.supplierReleaseNumber ?? ""}
@@ -2297,6 +2683,39 @@ export default function InboundGrid({
                     (notesColumn && onNotesSelect) ||
                     (noteTextColumn && onNoteTextSelect) ||
                     (transportChannelColumn && onTransportChannelSelect);
+                  const saleableColumn =
+                    isSaleableVolumeColumn(column) &&
+                    typeof onSaleableVolumeEnter === "function" &&
+                    id !== "";
+                  const numericColumn =
+                    matches(numeric, column) ||
+                    (integerNumeric &&
+                      !isNonNumericTradeColumn(column) &&
+                      isNumericCellValue(row[column.key]));
+
+                  if (saleableColumn) {
+                    return (
+                      <SaleableVolumeCell
+                        key={column.key}
+                        id={id}
+                        className={[
+                          "px-3 py-2 align-top",
+                          numericColumn ? "text-right tabular-nums" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        formatted={formatCell(row[column.key], {
+                          numeric: numericColumn,
+                          integer: integerNumeric,
+                          date: matches(dates, column),
+                          dateTime: matches(dateTimes, column),
+                        })}
+                        split={saleableVolumeSplit}
+                        onEnter={onSaleableVolumeEnter}
+                        onLeave={onSaleableVolumeLeave}
+                      />
+                    );
+                  }
 
                   return (
                     <td
@@ -2307,9 +2726,12 @@ export default function InboundGrid({
                             ? trackingColumnPadClass(column)
                             : "px-3 py-2"
                         } align-top`,
-                        matches(numeric, column) ? "text-right tabular-nums" : "",
+                        numericColumn ? "text-right tabular-nums" : "",
                         linkColumn
-                          ? "cursor-pointer text-blue-900 underline dark:text-blue-300"
+                          ? "cursor-pointer text-navy-950 underline"
+                          : "",
+                        isOverUnderColumn(column)
+                          ? "font-medium text-gold-600"
                           : "",
                         qtyLitresColumn ? "group relative" : "",
                         isBlendGroupKeyColumn(column)
@@ -2356,7 +2778,8 @@ export default function InboundGrid({
                       }
                     >
                       {formatCell(row[column.key], {
-                        numeric: matches(numeric, column),
+                        numeric: numericColumn,
+                        integer: integerNumeric,
                         date: matches(dates, column),
                         dateTime: matches(dateTimes, column),
                         zeroIfNull: docsColumn || notesColumn,

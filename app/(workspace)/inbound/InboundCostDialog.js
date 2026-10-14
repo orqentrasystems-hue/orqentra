@@ -72,7 +72,7 @@ export default function InboundCostDialog({
       >
         <div className="mb-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <h2 className="text-lg font-semibold text-black dark:text-zinc-50">
+            <h2 className="text-lg font-semibold text-navy-950">
               {title}
             </h2>
             {headerExtra}
