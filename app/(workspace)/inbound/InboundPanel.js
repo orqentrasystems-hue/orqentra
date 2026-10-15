@@ -241,7 +241,13 @@ function emptyTradeDraft() {
   };
 }
 
-function patchDraftRows(rows, patch, index, sharedKeys = []) {
+function patchDraftRows(
+  rows,
+  patch,
+  index,
+  sharedKeys = [],
+  { direction = "all" } = {},
+) {
   const replicate = {};
 
   for (const key of sharedKeys) {
@@ -257,7 +263,10 @@ function patchDraftRows(rows, patch, index, sharedKeys = []) {
       return { ...row, ...patch };
     }
 
-    if (shouldReplicate) {
+    if (
+      shouldReplicate &&
+      (direction === "all" || (direction === "down" && rowIndex > index))
+    ) {
       return { ...row, ...replicate };
     }
 
@@ -2751,9 +2760,13 @@ export default function InboundPanel({ options, userId = "" }) {
         draftPending={liftCommitPending}
         onDraftChange={(patch, index) => {
           setLiftDrafts((current) =>
-            patchDraftRows(current, patch, index, [
-              "supplier_release_number",
-            ]),
+            patchDraftRows(
+              current,
+              patch,
+              index,
+              ["supplier_release_number"],
+              { direction: "down" },
+            ),
           );
           setLiftCommitMessage("");
         }}
@@ -3022,10 +3035,13 @@ export default function InboundPanel({ options, userId = "" }) {
         selectLookupOption={SELECT_LOOKUP}
         onDraftChange={(patch, index) => {
           setLoadDrafts((current) =>
-            patchDraftRows(current, patch, index, [
-              "contract_number",
-              "uplift_number",
-            ]),
+            patchDraftRows(
+              current,
+              patch,
+              index,
+              ["contract_number", "uplift_number"],
+              { direction: "down" },
+            ),
           );
           setLoadCommitMessage("");
         }}
