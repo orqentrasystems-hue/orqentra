@@ -70,6 +70,7 @@ import InboundGrid, {
   fieldByKey,
   rowId,
 } from "./InboundGrid";
+import { exportInboundPageToExcel } from "./exportInboundPageToExcel";
 import TradeStatusesSelect from "./TradeStatusesSelect";
 
 const DEFAULT_STATUS_LABELS = new Set(["new", "in progress"]);
@@ -892,6 +893,8 @@ export default function InboundPanel({ options, userId = "" }) {
   const trackingEditAllowRef = useRef(null);
   const [trackingEdit, setTrackingEdit] = useState(null);
   const [voidStatusPendingId, setVoidStatusPendingId] = useState("");
+  const pageExportRef = useRef(null);
+  const [pageExportPending, setPageExportPending] = useState(false);
   const [selectedTrackingId, setSelectedTrackingId] = useState("");
   const [liftRows, setLiftRows] = useState([]);
   const [liftMessage, setLiftMessage] = useState("");
@@ -2143,15 +2146,49 @@ export default function InboundPanel({ options, userId = "" }) {
     setSaleableVolumeSplit(null);
   }
 
+  async function onExportPageToExcel() {
+    if (pageExportPending) {
+      return;
+    }
+
+    setPageExportPending(true);
+
+    try {
+      const root =
+        pageExportRef.current?.closest("section") ?? pageExportRef.current;
+      await exportInboundPageToExcel(root, {
+        tradeStatuses: options
+          .filter((option) => selectedIds.includes(option.id))
+          .map((option) => option.label),
+      });
+    } finally {
+      setPageExportPending(false);
+    }
+  }
+
   return (
-    <div className="flex w-full flex-col items-start gap-6">
-      <TradeStatusesSelect
-        options={options}
-        selectedIds={selectedIds}
-        onSelectedIdsChange={setSelectedIds}
-      />
+    <div
+      ref={pageExportRef}
+      className="flex w-full flex-col items-start gap-6"
+    >
+      <div className="flex w-full items-end justify-between gap-4">
+        <TradeStatusesSelect
+          options={options}
+          selectedIds={selectedIds}
+          onSelectedIdsChange={setSelectedIds}
+        />
+        <button
+          type="button"
+          disabled={pageExportPending}
+          onClick={onExportPageToExcel}
+          className="shrink-0 rounded bg-gold-600 px-4 py-2 text-sm font-medium text-white hover:bg-gold-500 disabled:opacity-50"
+        >
+          {pageExportPending ? "Exporting…" : "Export Page to Excel"}
+        </button>
+      </div>
       <div className="w-full">
         <InboundGrid
+          title="Inbound Trades"
           rows={rows}
           message={message}
           pending={pending}

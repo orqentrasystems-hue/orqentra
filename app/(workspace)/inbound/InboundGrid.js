@@ -1440,6 +1440,7 @@ function LoadDraftCell({
 
           onChange?.({ load_qty: next }, draftIndex);
         }}
+        title={qtyCubesTip(values.load_qty)}
         className={`${DRAFT_INPUT_CLASS} text-right tabular-nums`}
       />
     );
@@ -1456,6 +1457,7 @@ function LoadDraftCell({
         onChange={(event) =>
           onChange?.({ actual_loaded_qty: event.target.value }, draftIndex)
         }
+        title={qtyCubesTip(values.actual_loaded_qty)}
         className={`${DRAFT_INPUT_CLASS} text-right tabular-nums`}
       />
     );
@@ -1584,6 +1586,84 @@ function unassignedHeaderTip(column, kind) {
   }
 
   return undefined;
+}
+
+function isCubesTipColumn(column, kind) {
+  if (kind === "lift") {
+    return (
+      isLiftQtyToLiftColumn(column) ||
+      isOverUnderColumn(column) ||
+      isUnassignedColumn(column)
+    );
+  }
+
+  if (kind === "load") {
+    return isLoadQtyColumn(column) || isLoadActualQtyColumn(column);
+  }
+
+  if (kind === "tracking") {
+    return (
+      isQtyLitresColumn(column) ||
+      isOverUnderColumn(column) ||
+      isUnassignedColumn(column)
+    );
+  }
+
+  return isQtyLitresColumn(column);
+}
+
+function cubesTipFor(column, kind, source) {
+  if (!isCubesTipColumn(column, kind) || source == null) {
+    return "";
+  }
+
+  if (typeof source !== "object") {
+    return qtyCubesTip(source);
+  }
+
+  if (kind === "tracking" && isTrackingQtyColumn(column)) {
+    const tip = qtyCubesTip(source.qty ?? source[column.key]);
+    if (tip) {
+      return tip;
+    }
+  }
+
+  if (kind === "lift" && isLiftQtyToLiftColumn(column)) {
+    const tip = qtyCubesTip(
+      source.qty_to_lift ?? source.qtyToLift ?? source[column.key],
+    );
+    if (tip) {
+      return tip;
+    }
+  }
+
+  if (kind === "load" && isLoadQtyColumn(column)) {
+    const tip = qtyCubesTip(source.load_qty ?? source[column.key]);
+    if (tip) {
+      return tip;
+    }
+  }
+
+  if (kind === "load" && isLoadActualQtyColumn(column)) {
+    const tip = qtyCubesTip(source.actual_loaded_qty ?? source[column.key]);
+    if (tip) {
+      return tip;
+    }
+  }
+
+  return qtyCubesTip(source[column.key]);
+}
+
+function CubesTipBubble({ tip }) {
+  if (!tip) {
+    return null;
+  }
+
+  return (
+    <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-zinc-800 px-2 py-0.5 text-xs text-white group-hover:block dark:bg-zinc-200 dark:text-zinc-900">
+      {tip}
+    </span>
+  );
 }
 
 const BLEND_GROUP_KEY_COL_CLASS =
@@ -2212,6 +2292,10 @@ export default function InboundGrid({
                   (draftKind === "load" &&
                     (isLoadQtyColumn(column) ||
                       isLoadActualQtyColumn(column)));
+                const cubesTipColumn = isCubesTipColumn(column, draftKind);
+                const cubesTip = cubesTipColumn
+                  ? cubesTipFor(column, draftKind, draft)
+                  : "";
 
                 return (
                   <td
@@ -2221,20 +2305,14 @@ export default function InboundGrid({
                         ? `${trackingColumnPadClass(column, { draft: true })} align-middle`
                         : "px-3 py-2 align-middle",
                       numericColumn ? "text-right" : "",
-                      draftKind === "tracking" && isTrackingQtyColumn(column)
-                        ? "group relative"
-                        : "",
+                      cubesTipColumn ? "group relative" : "",
                       isBlendGroupKeyColumn(column)
                         ? BLEND_GROUP_KEY_COL_CLASS
                         : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    title={
-                      draftKind === "tracking" && isTrackingQtyColumn(column)
-                        ? qtyCubesTip(draft.qty)
-                        : undefined
-                    }
+                    title={cubesTip || undefined}
                   >
                     {draftKind === "load" ? (
                       <LoadDraftCell
@@ -2254,6 +2332,7 @@ export default function InboundGrid({
                           inputMode="decimal"
                           value={draft.qty_to_lift ?? ""}
                           disabled={draftPending}
+                          title={qtyCubesTip(draft.qty_to_lift)}
                           onChange={(event) => {
                             const next = event.target.value;
 
@@ -2369,6 +2448,7 @@ export default function InboundGrid({
                         className={DRAFT_INPUT_CLASS}
                       />
                     ) : null}
+                    <CubesTipBubble tip={cubesTip} />
                   </td>
                 );
               })}
@@ -2534,10 +2614,12 @@ export default function InboundGrid({
                   }
 
                   if (editing && draftKind === "lift" && isLiftQtyToLiftColumn(column)) {
+                    const cubesTip = qtyCubesTip(editRow.qtyToLift);
                     return (
                       <td
                         key={column.key}
-                        className="px-3 py-2 align-middle text-right"
+                        className="group relative px-3 py-2 align-middle text-right"
+                        title={cubesTip || undefined}
                         onClick={(event) => event.stopPropagation()}
                       >
                         <ClearableInput
@@ -2546,11 +2628,13 @@ export default function InboundGrid({
                           inputMode="decimal"
                           value={editRow.qtyToLift ?? ""}
                           disabled={draftPending}
+                          title={cubesTip || undefined}
                           onChange={(event) =>
                             onEditChange?.({ qtyToLift: event.target.value })
                           }
                           className={`${DRAFT_INPUT_CLASS} text-right tabular-nums`}
                         />
+                        <CubesTipBubble tip={cubesTip} />
                       </td>
                     );
                   }
@@ -2667,6 +2751,7 @@ export default function InboundGrid({
                     draftKind === "load" &&
                     isLoadEditableColumn(column)
                   ) {
+                    const cubesTip = cubesTipFor(column, "load", editRow);
                     return (
                       <td
                         key={column.key}
@@ -2675,9 +2760,13 @@ export default function InboundGrid({
                           isLoadQtyColumn(column) || isLoadActualQtyColumn(column)
                             ? "text-right"
                             : "",
+                          isLoadQtyColumn(column) || isLoadActualQtyColumn(column)
+                            ? "group relative"
+                            : "",
                         ]
                           .filter(Boolean)
                           .join(" ")}
+                        title={cubesTip || undefined}
                         onClick={(event) => event.stopPropagation()}
                       >
                         <LoadDraftCell
@@ -2688,6 +2777,7 @@ export default function InboundGrid({
                           disabled={draftPending}
                           onChange={(patch) => onEditChange?.(patch)}
                         />
+                        <CubesTipBubble tip={cubesTip} />
                       </td>
                     );
                   }
@@ -2706,6 +2796,11 @@ export default function InboundGrid({
                     );
 
                     if (trackingControl != null) {
+                      const cubesTip = cubesTipFor(
+                        column,
+                        "tracking",
+                        editRow,
+                      );
                       return (
                         <td
                           key={column.key}
@@ -2716,29 +2811,28 @@ export default function InboundGrid({
                             isTrackingSuppInvAmtColumn(column)
                               ? "text-right"
                               : "",
-                            isTrackingQtyColumn(column) ? "group relative" : "",
+                            isCubesTipColumn(column, "tracking")
+                              ? "group relative"
+                              : "",
                             isBlendGroupKeyColumn(column)
                               ? BLEND_GROUP_KEY_COL_CLASS
                               : "",
                           ]
                             .filter(Boolean)
                             .join(" ")}
-                          title={
-                            isTrackingQtyColumn(column)
-                              ? qtyCubesTip(editRow.qty)
-                              : undefined
-                          }
+                          title={cubesTip || undefined}
                           onClick={(event) => event.stopPropagation()}
                         >
                           {trackingControl}
+                          <CubesTipBubble tip={cubesTip} />
                         </td>
                       );
                     }
                   }
 
-                  const qtyLitresColumn = isQtyLitresColumn(column);
-                  const cubesTip = qtyLitresColumn
-                    ? qtyCubesTip(row[column.key])
+                  const cubesTipColumn = isCubesTipColumn(column, draftKind);
+                  const cubesTip = cubesTipColumn
+                    ? cubesTipFor(column, draftKind, row)
                     : "";
                   const linkColumn =
                     (docsColumn && onDocsSelect) ||
@@ -2795,7 +2889,7 @@ export default function InboundGrid({
                         isOverUnderColumn(column)
                           ? "font-medium text-gold-600"
                           : "",
-                        qtyLitresColumn ? "group relative" : "",
+                        cubesTipColumn ? "group relative" : "",
                         isBlendGroupKeyColumn(column)
                           ? BLEND_GROUP_KEY_COL_CLASS
                           : "",
@@ -2847,11 +2941,7 @@ export default function InboundGrid({
                         dateTime: matches(dateTimes, column),
                         zeroIfNull: docsColumn || notesColumn,
                       })}
-                      {cubesTip ? (
-                        <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-zinc-800 px-2 py-0.5 text-xs text-white group-hover:block dark:bg-zinc-200 dark:text-zinc-900">
-                          {cubesTip}
-                        </span>
-                      ) : null}
+                      <CubesTipBubble tip={cubesTip} />
                     </td>
                   );
                 })}
