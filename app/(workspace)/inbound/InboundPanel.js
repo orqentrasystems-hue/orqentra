@@ -246,7 +246,7 @@ function patchDraftRows(
   patch,
   index,
   sharedKeys = [],
-  { direction = "all" } = {},
+  { direction = "all", fromFirst = false } = {},
 ) {
   const replicate = {};
 
@@ -256,7 +256,8 @@ function patchDraftRows(
     }
   }
 
-  const shouldReplicate = Object.keys(replicate).length > 0;
+  const shouldReplicate =
+    Object.keys(replicate).length > 0 && (!fromFirst || index === 0);
 
   return rows.map((row, rowIndex) => {
     if (rowIndex === index) {
@@ -845,6 +846,18 @@ function blendGroupingKey(rows, trackingId) {
   return "";
 }
 
+function firstRowId(rows) {
+  for (const row of rows ?? []) {
+    const id = rowId(row);
+
+    if (id) {
+      return id;
+    }
+  }
+
+  return "";
+}
+
 function blendGroupingKeyLift(rows, liftId) {
   const row = (rows ?? []).find((item) => rowId(item) === String(liftId));
   const value = fieldByKey(row, "blend_grouping_key_lift");
@@ -1055,6 +1068,7 @@ export default function InboundPanel({ options, userId = "" }) {
   const [uploadMessage, setUploadMessage] = useState("");
   const uploadLock = useRef(false);
   const docsOpenRef = useRef(false);
+  const costOpenRef = useRef(false);
   const liftDocsOpenRef = useRef(false);
   const loadDocsOpenRef = useRef(false);
   const tradeGridRef = useRef(null);
@@ -1084,16 +1098,20 @@ export default function InboundPanel({ options, userId = "" }) {
     (row) => rowId(row) === String(selectedLiftId) && selectedLiftId !== "",
   );
 
+  async function reloadTrackingGrid() {
+    if (!selectedTradeId) {
+      return;
+    }
+
+    setTrackingPending(true);
+    const tracking = await loadInboundItemTracking(selectedTradeId);
+    setTrackingRows(tracking.rows);
+    setTrackingMessage(tracking.ok ? "" : tracking.message);
+    setTrackingPending(false);
+  }
+
   async function reloadTrackingAndLiftGrids() {
-    const trackingPromise = selectedTradeId
-      ? (async () => {
-          setTrackingPending(true);
-          const tracking = await loadInboundItemTracking(selectedTradeId);
-          setTrackingRows(tracking.rows);
-          setTrackingMessage(tracking.ok ? "" : tracking.message);
-          setTrackingPending(false);
-        })()
-      : Promise.resolve();
+    const trackingPromise = reloadTrackingGrid();
 
     const liftPromise = selectedBlendGroupKey
       ? (async () => {
@@ -1211,6 +1229,7 @@ export default function InboundPanel({ options, userId = "" }) {
       setTrackingRows(result.rows);
       setTrackingMessage(result.ok ? "" : result.message);
       setTrackingPending(false);
+      setSelectedTrackingId(firstRowId(result.rows));
     }
 
     load();
@@ -1248,6 +1267,7 @@ export default function InboundPanel({ options, userId = "" }) {
       setLiftPending(true);
       setLiftDrafts([]);
       setLiftEdit(null);
+      setSelectedLiftId("");
       const result = await loadInboundLift(selectedBlendGroupKey);
 
       if (cancelled) {
@@ -1257,6 +1277,7 @@ export default function InboundPanel({ options, userId = "" }) {
       setLiftRows(result.rows);
       setLiftMessage(result.ok ? "" : result.message);
       setLiftPending(false);
+      setSelectedLiftId(firstRowId(result.rows));
     }
 
     load();
@@ -1818,6 +1839,36 @@ export default function InboundPanel({ options, userId = "" }) {
       cancelled = true;
     };
   }, [docsOpen, liftDocsOpen, loadDocsOpen]);
+
+  useEffect(() => {
+    const wasOpen = costOpenRef.current;
+    costOpenRef.current = costOpen;
+
+    if (!wasOpen || costOpen || !selectedTradeId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function load() {
+      setTrackingPending(true);
+      const result = await loadInboundItemTracking(selectedTradeId);
+
+      if (cancelled) {
+        return;
+      }
+
+      setTrackingRows(result.rows);
+      setTrackingMessage(result.ok ? "" : result.message);
+      setTrackingPending(false);
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [costOpen, selectedTradeId]);
 
   useEffect(() => {
     const wasOpen = docsOpenRef.current;
@@ -2679,6 +2730,7 @@ export default function InboundPanel({ options, userId = "" }) {
 
           setLiftEdit(null);
           setLiftCommitPending(false);
+          await reloadTrackingGrid();
 
           const groupingKey = blendGroupingKey(
             trackingRows,
@@ -2839,6 +2891,7 @@ export default function InboundPanel({ options, userId = "" }) {
             current.filter((_, index) => index !== draftIndex),
           );
           setLiftCommitPending(false);
+          await reloadTrackingGrid();
           setLiftPending(true);
           const lift = await loadInboundLift(groupingKey);
           setLiftRows(lift.rows);
@@ -3034,15 +3087,27 @@ export default function InboundPanel({ options, userId = "" }) {
         collectionPointOptions={collectionPointOptions}
         selectLookupOption={SELECT_LOOKUP}
         onDraftChange={(patch, index) => {
-          setLoadDrafts((current) =>
-            patchDraftRows(
+          setLoadDrafts((current) => {
+            const next = patchDraftRows(
               current,
               patch,
               index,
               ["contract_number", "uplift_number"],
               { direction: "down" },
-            ),
-          );
+            );
+
+            return patchDraftRows(
+              next,
+              patch,
+              index,
+              [
+                "load_date",
+                "collection_point_id",
+                "expected_completion_date",
+              ],
+              { direction: "down", fromFirst: true },
+            );
+          });
           setLoadCommitMessage("");
         }}
         draftPending={loadCommitPending}
@@ -4388,6 +4453,8 @@ export default function InboundPanel({ options, userId = "" }) {
             "amount",
             "qty",
             "amount_per_liter",
+            "amount_per_litre",
+            "amt_per_litre",
           ]}
           onNotesSelect={(id) => {
             setSelectedCostId(id);

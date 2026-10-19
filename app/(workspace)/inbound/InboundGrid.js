@@ -3,7 +3,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-function formatNumberMask(value, { decimals = 2 } = {}) {
+function formatNumberMask(value, { decimals = 2, trim = false } = {}) {
   if (value == null || value === "") {
     return "";
   }
@@ -30,8 +30,9 @@ function formatNumberMask(value, { decimals = 2 } = {}) {
   const [intPart, decPart] = n.toFixed(decimals).split(".");
   const sign = intPart.startsWith("-") ? "-" : "";
   const grouped = intPart.replace("-", "").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  const fraction = trim ? decPart.replace(/0+$/, "") : decPart;
 
-  return `${sign}${grouped}.${decPart}`;
+  return fraction ? `${sign}${grouped}.${fraction}` : `${sign}${grouped}`;
 }
 
 const MONTHS = [
@@ -106,6 +107,8 @@ function formatCell(
   {
     numeric = false,
     integer = false,
+    decimals,
+    trimDecimals = false,
     date = false,
     dateTime = false,
     zeroIfNull = false,
@@ -116,7 +119,10 @@ function formatCell(
   }
 
   if (numeric) {
-    return formatNumberMask(value, { decimals: integer ? 0 : 2 });
+    return formatNumberMask(value, {
+      decimals: integer ? 0 : decimals ?? 2,
+      trim: trimDecimals,
+    });
   }
 
   if (dateTime) {
@@ -628,6 +634,17 @@ function isCostTypeDraftColumn(column) {
   );
 }
 
+function isAmtPerLitreColumn(column) {
+  const { label, key } = columnLabelKey(column);
+  return (
+    label === "amt per litre" ||
+    key === "amt_per_litre" ||
+    key === "amount_per_litre" ||
+    key === "amount_per_liter" ||
+    key === "amt_per_liter"
+  );
+}
+
 function isTradeStatusColumn(column) {
   const key = column.key.toLowerCase();
   return (
@@ -1024,12 +1041,37 @@ function isVoidableStatusColumn(column) {
   );
 }
 
+function isTruthyFlag(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value !== 0;
+  }
+
+  const text = String(value ?? "")
+    .trim()
+    .toLowerCase();
+
+  return text === "true" || text === "t" || text === "1" || text === "yes";
+}
+
+function isReversedColumn(column) {
+  const { label, key } = columnLabelKey(column);
+  return label === "reversed" || key === "reversed";
+}
+
 function isVoidGridRow(row, columns) {
   if (!row) {
     return false;
   }
 
   for (const column of columns ?? []) {
+    if (isReversedColumn(column) && isTruthyFlag(row[column.key])) {
+      return true;
+    }
+
     if (!isVoidableStatusColumn(column)) {
       continue;
     }
@@ -1039,7 +1081,11 @@ function isVoidGridRow(row, columns) {
     }
   }
 
-  return false;
+  const reversed = Object.keys(row).find(
+    (key) => key.toLowerCase() === "reversed",
+  );
+
+  return reversed ? isTruthyFlag(row[reversed]) : false;
 }
 
 function isTrackingStatusDateColumn(column) {
@@ -1518,10 +1564,14 @@ function unassignedHeaderTip(column, kind) {
   const { key } = columnLabelKey(column);
 
   if (kind === "tracking" || key === "qty_not_assigned_to_lift") {
-    return undefined;
+    return "Qty not assigned to Lift";
   }
 
-  return "Qty Not Assigned to Load";
+  if (kind === "lift" || key === "qty_not_assigned_to_load") {
+    return "Qty not assigned to Load";
+  }
+
+  return undefined;
 }
 
 const BLEND_GROUP_KEY_COL_CLASS =
@@ -2089,7 +2139,7 @@ export default function InboundGrid({
                     ? "group relative cursor-pointer text-gold-600 underline"
                     : "",
                   unassignedHeaderTip(column, draftKind)
-                    ? "group relative"
+                    ? "group relative cursor-pointer text-gold-600 underline"
                     : "",
                   isBlendGroupKeyColumn(column) ? BLEND_GROUP_KEY_COL_CLASS : "",
                 ]
@@ -2780,6 +2830,7 @@ export default function InboundGrid({
                       {formatCell(row[column.key], {
                         numeric: numericColumn,
                         integer: integerNumeric,
+                        decimals: isAmtPerLitreColumn(column) ? 3 : undefined,
                         date: matches(dates, column),
                         dateTime: matches(dateTimes, column),
                         zeroIfNull: docsColumn || notesColumn,
