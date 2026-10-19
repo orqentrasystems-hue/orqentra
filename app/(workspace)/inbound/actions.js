@@ -2480,6 +2480,64 @@ function fileNameOnly(name) {
   return base;
 }
 
+function storagePathFromRpc(data) {
+  if (typeof data === "string") {
+    return data.trim();
+  }
+
+  if (Array.isArray(data)) {
+    return storagePathFromRpc(data[0]);
+  }
+
+  if (data && typeof data === "object") {
+    const value =
+      data.file_path ??
+      data.path ??
+      data.value ??
+      Object.values(data)[0] ??
+      "";
+    return String(value ?? "").trim();
+  }
+
+  return "";
+}
+
+async function uploadDocumentFromRpcPath(file, rpcPath) {
+  const parsed = parseStoragePath(rpcPath);
+
+  if (!parsed) {
+    return { ok: false, message: "The document path was not returned." };
+  }
+
+  const storage = createAdminClient();
+  const { error: uploadError } = await storage.storage
+    .from(parsed.bucket)
+    .upload(parsed.objectPath, file, {
+      upsert: true,
+      contentType: file.type || undefined,
+    });
+
+  if (uploadError) {
+    const folder = parsed.objectPath.includes("/")
+      ? parsed.objectPath.slice(0, parsed.objectPath.lastIndexOf("/"))
+      : "";
+    const { data: listed } = await storage.storage
+      .from(parsed.bucket)
+      .list(folder, {
+        search: parsed.fileName,
+        limit: 20,
+      });
+
+    if (listed?.some((item) => item.name === parsed.fileName)) {
+      return { ok: true, message: "" };
+    }
+
+    return { ok: false, message: uploadError.message };
+  }
+
+  return { ok: true, message: "" };
+}
+
 export async function addInboundDocument(formData) {
   const cookieStore = await cookies();
   const appName = cookieStore.get(NAV_APP_COOKIE)?.value ?? "";
@@ -2526,7 +2584,7 @@ export async function addInboundDocument(formData) {
       return { ok: false, message: "You must be logged on." };
     }
 
-    const { error } = await supabase.rpc(
+    const { data, error } = await supabase.rpc(
       "pi_document_for_inbound_stock_item_tracking",
       {
         p_document_type_id: documentTypeId,
@@ -2540,31 +2598,7 @@ export async function addInboundDocument(formData) {
       return { ok: false, message: error.message };
     }
 
-    const storage = createAdminClient();
-    const objectPath = `inbound_stock_item_tracking/${filename}`;
-    const { error: uploadError } = await storage.storage
-      .from("documents_clte_apex")
-      .upload(objectPath, file, {
-        upsert: true,
-        contentType: file.type || undefined,
-      });
-
-    if (uploadError) {
-      const { data: listed } = await storage.storage
-        .from("documents_clte_apex")
-        .list("inbound_stock_item_tracking", {
-          search: filename,
-          limit: 20,
-        });
-
-      if (listed?.some((item) => item.name === filename)) {
-        return { ok: true, message: "" };
-      }
-
-      return { ok: false, message: uploadError.message };
-    }
-
-    return { ok: true, message: "" };
+    return uploadDocumentFromRpcPath(file, storagePathFromRpc(data));
   } catch (error) {
     return {
       ok: false,
@@ -2620,7 +2654,7 @@ export async function addInboundLiftDocument(formData) {
       return { ok: false, message: "You must be logged on." };
     }
 
-    const { error } = await supabase.rpc("pi_document_for_inbound_lift", {
+    const { data, error } = await supabase.rpc("pi_document_for_inbound_lift", {
       p_document_type_id: documentTypeId,
       p_inbound_lift_id: liftId,
       p_filename: filename,
@@ -2631,31 +2665,7 @@ export async function addInboundLiftDocument(formData) {
       return { ok: false, message: error.message };
     }
 
-    const storage = createAdminClient();
-    const objectPath = `inbound_lift/${filename}`;
-    const { error: uploadError } = await storage.storage
-      .from("documents_clte_apex")
-      .upload(objectPath, file, {
-        upsert: true,
-        contentType: file.type || undefined,
-      });
-
-    if (uploadError) {
-      const { data: listed } = await storage.storage
-        .from("documents_clte_apex")
-        .list("inbound_lift", {
-          search: filename,
-          limit: 20,
-        });
-
-      if (listed?.some((item) => item.name === filename)) {
-        return { ok: true, message: "" };
-      }
-
-      return { ok: false, message: uploadError.message };
-    }
-
-    return { ok: true, message: "" };
+    return uploadDocumentFromRpcPath(file, storagePathFromRpc(data));
   } catch (error) {
     return {
       ok: false,
@@ -2711,7 +2721,7 @@ export async function addInboundLoadDocument(formData) {
       return { ok: false, message: "You must be logged on." };
     }
 
-    const { error } = await supabase.rpc("pi_document_for_inbound_load", {
+    const { data, error } = await supabase.rpc("pi_document_for_inbound_load", {
       p_document_type_id: documentTypeId,
       p_inbound_load_id: loadId,
       p_filename: filename,
@@ -2722,31 +2732,7 @@ export async function addInboundLoadDocument(formData) {
       return { ok: false, message: error.message };
     }
 
-    const storage = createAdminClient();
-    const objectPath = `inbound_load/${filename}`;
-    const { error: uploadError } = await storage.storage
-      .from("documents_clte_apex")
-      .upload(objectPath, file, {
-        upsert: true,
-        contentType: file.type || undefined,
-      });
-
-    if (uploadError) {
-      const { data: listed } = await storage.storage
-        .from("documents_clte_apex")
-        .list("inbound_load", {
-          search: filename,
-          limit: 20,
-        });
-
-      if (listed?.some((item) => item.name === filename)) {
-        return { ok: true, message: "" };
-      }
-
-      return { ok: false, message: uploadError.message };
-    }
-
-    return { ok: true, message: "" };
+    return uploadDocumentFromRpcPath(file, storagePathFromRpc(data));
   } catch (error) {
     return {
       ok: false,

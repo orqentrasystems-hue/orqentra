@@ -414,6 +414,122 @@ function isDieselOrEthanolProduct(productId, products) {
   return label === "diesel" || label === "ethanol";
 }
 
+function toDraftNumber(value) {
+  const n = Number(
+    String(value ?? "")
+      .trim()
+      .replace(/\s/g, "")
+      .replace(",", "."),
+  );
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function formatLiftQty(value) {
+  if (!Number.isFinite(value)) {
+    return "";
+  }
+
+  if (Number.isInteger(value)) {
+    return String(value);
+  }
+
+  return String(Math.round(value * 1000) / 1000);
+}
+
+function rowProductName(row, products = []) {
+  const named = String(
+    firstField(row, ["product_name", "product"]) ||
+      valueAtLabel(row, TRACKING_COLUMN_LABELS, "Product") ||
+      valueAtLabel(row, LIFT_COLUMN_LABELS, "Product Name") ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (named === "petrol" || named === "ethanol") {
+    return named;
+  }
+
+  const match = (products ?? []).find(
+    (option) => option.id === String(firstField(row, ["product_id"])),
+  );
+  return String(match?.label ?? named)
+    .trim()
+    .toLowerCase();
+}
+
+function trackingEthanolPercent(row) {
+  return (
+    firstField(row, [
+      "ethanol_blend_percentage",
+      "ethanol_percent",
+      "ethanol",
+    ]) || valueAtLabel(row, TRACKING_COLUMN_LABELS, "E. %")
+  );
+}
+
+function trackingBlendKey(row) {
+  return firstField(row, ["blend_grouping_key", "blend_group_key"]);
+}
+
+function petrolEthanolPercent(trackingRows, selectedRow, products = []) {
+  if (!selectedRow) {
+    return NaN;
+  }
+
+  const product = rowProductName(selectedRow, products);
+
+  if (product === "petrol") {
+    return toDraftNumber(trackingEthanolPercent(selectedRow));
+  }
+
+  if (product !== "ethanol") {
+    return NaN;
+  }
+
+  const group = trackingBlendKey(selectedRow);
+  const petrolRow = (trackingRows ?? []).find(
+    (row) =>
+      rowProductName(row, products) === "petrol" &&
+      trackingBlendKey(row) === group &&
+      group !== "",
+  );
+
+  return petrolRow ? toDraftNumber(trackingEthanolPercent(petrolRow)) : NaN;
+}
+
+function ethanolQtyFromPetrol(petr, perc) {
+  if (!Number.isFinite(petr) || !Number.isFinite(perc) || perc === 100) {
+    return "";
+  }
+
+  return formatLiftQty((petr * 100) / (100 - perc) - petr);
+}
+
+function applyEthanolQtyFromPetrolDrafts(rows, perc, products = []) {
+  const petrolIndex = (rows ?? []).findIndex(
+    (row) => rowProductName(row, products) === "petrol",
+  );
+  const ethanolIndex = (rows ?? []).findIndex(
+    (row) => rowProductName(row, products) === "ethanol",
+  );
+
+  if (petrolIndex < 0 || ethanolIndex < 0) {
+    return rows;
+  }
+
+  const petr = toDraftNumber(rows[petrolIndex]?.qty_to_lift);
+
+  return rows.map((row, rowIndex) =>
+    rowIndex === ethanolIndex
+      ? {
+          ...row,
+          qty_to_lift: ethanolQtyFromPetrol(petr, perc),
+        }
+      : row,
+  );
+}
+
 function isoDateFromValue(value) {
   if (value == null || value === "") {
     return "";
@@ -900,6 +1016,7 @@ export default function InboundPanel({ options, userId = "" }) {
   const [liftMessage, setLiftMessage] = useState("");
   const [liftPending, setLiftPending] = useState(false);
   const [liftDrafts, setLiftDrafts] = useState([]);
+  const liftPercRef = useRef(NaN);
   const [liftCommitPending, setLiftCommitPending] = useState(false);
   const [liftCommitMessage, setLiftCommitMessage] = useState("");
   const [liftHoverId, setLiftHoverId] = useState("");
@@ -2797,7 +2914,19 @@ export default function InboundPanel({ options, userId = "" }) {
                   return;
                 }
 
-                setLiftDrafts(result.rows.map(liftDraftFromTrackingToLift));
+                const perc = petrolEthanolPercent(
+                  trackingRows,
+                  selectedTracking,
+                  trackingLookups.products,
+                );
+                liftPercRef.current = perc;
+                setLiftDrafts(
+                  applyEthanolQtyFromPetrolDrafts(
+                    result.rows.map(liftDraftFromTrackingToLift),
+                    perc,
+                    trackingLookups.products,
+                  ),
+                );
               }}
               className="text-sm font-medium text-blue-900 underline disabled:opacity-50 dark:text-blue-300"
             >
@@ -2808,15 +2937,29 @@ export default function InboundPanel({ options, userId = "" }) {
         draftRows={liftDrafts}
         draftPending={liftCommitPending}
         onDraftChange={(patch, index) => {
-          setLiftDrafts((current) =>
-            patchDraftRows(
+          setLiftDrafts((current) => {
+            const next = patchDraftRows(
               current,
               patch,
               index,
               ["supplier_release_number"],
               { direction: "down" },
-            ),
-          );
+            );
+
+            if (!Object.prototype.hasOwnProperty.call(patch, "qty_to_lift")) {
+              return next;
+            }
+
+            if (rowProductName(next[index], trackingLookups.products) !== "petrol") {
+              return next;
+            }
+
+            return applyEthanolQtyFromPetrolDrafts(
+              next,
+              liftPercRef.current,
+              trackingLookups.products,
+            );
+          });
           setLiftCommitMessage("");
         }}
         onCommitDraft={async (draftIndex) => {
