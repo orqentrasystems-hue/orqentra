@@ -360,6 +360,7 @@ function loadEditFromRow(
       collectionLabel,
     ),
     loadStatusId: matched?.id ?? "",
+    originalLoadStatusId: matched?.id ?? "",
     statusLabel,
   };
 }
@@ -458,49 +459,6 @@ function lookupIdFromValue(options, ...values) {
   return SELECT_LOOKUP.id;
 }
 
-function normalizeLookupText(value) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[.,/|#_-]+/g, " ")
-    .replace(/\s+/g, " ");
-}
-
-function transportLookupId(options, ...values) {
-  const exact = lookupIdFromValue(options, ...values);
-
-  if (exact !== SELECT_LOOKUP.id) {
-    return exact;
-  }
-
-  for (const value of values) {
-    const text = normalizeLookupText(value);
-
-    if (!text || text === SELECT_LOOKUP.id || text === "0" || text.length < 2) {
-      continue;
-    }
-
-    const tokens = text.split(" ").filter(Boolean);
-    const match = (options ?? []).find((option) => {
-      const label = normalizeLookupText(option.label);
-      const parts = label.split(" ");
-      return (
-        label === text ||
-        label.endsWith(text) ||
-        parts[parts.length - 1] === text ||
-        label.includes(text) ||
-        (tokens.length > 0 && tokens.every((token) => label.includes(token)))
-      );
-    });
-
-    if (match) {
-      return match.id;
-    }
-  }
-
-  return SELECT_LOOKUP.id;
-}
-
 function fieldByAliases(row, aliases) {
   const direct = firstField(row, aliases);
 
@@ -554,29 +512,10 @@ function transportChannelPrefillFromRow(row) {
       "descr",
       "description",
     ]),
-    companyId: fieldByAliases(row, ["transport_company_id", "company_id"]),
-    companyLabel: fieldByAliases(row, [
-      "company_name",
-      "transport_company",
-      "company",
-      "company name",
-      "transport company",
-    ]),
-    driverId: fieldByAliases(row, ["truck_driver_id", "driver_id"]),
-    driverLabel: fieldByAliases(row, [
-      "truck_driver",
-      "driver",
-      "driver_name",
-      "truck driver",
-    ]),
+    companyId: fieldByAliases(row, ["transport_company_id"]),
+    driverId: fieldByAliases(row, ["driver_id"]),
     truckId: fieldByAliases(row, ["truck_id"]),
-    truckLabel: cellTextByColumnLabel(row, "Truck", ["truck"]),
-    trailerId: fieldByAliases(row, ["truck_trailer_id", "trailer_id"]),
-    trailerLabel: fieldByAliases(row, [
-      "truck_trailer",
-      "trailer",
-      "truck trailer",
-    ]),
+    trailerId: fieldByAliases(row, ["trailer_id"]),
   };
 }
 
@@ -1005,8 +944,10 @@ export default function InboundPanel({ options, userId = "" }) {
   const [transportChannelMode, setTransportChannelMode] = useState("add");
   const [transportChannelId, setTransportChannelId] = useState("");
   const [transportChannelPrefill, setTransportChannelPrefill] = useState(null);
-  const transportPrefillPendingRef = useRef(false);
-  const transportPrefillCompanyRef = useRef("");
+  const transportPrefillRef = useRef(null);
+  const [transportChildLookupsReady, setTransportChildLookupsReady] =
+    useState(false);
+  const [transportPrefillWaiting, setTransportPrefillWaiting] = useState(false);
   const [transportDescription, setTransportDescription] = useState("");
   const [transportCompanyId, setTransportCompanyId] = useState(SELECT_LOOKUP.id);
   const [truckDriverId, setTruckDriverId] = useState(SELECT_LOOKUP.id);
@@ -1097,6 +1038,14 @@ export default function InboundPanel({ options, userId = "" }) {
   const liftRowSelected = liftRows.some(
     (row) => rowId(row) === String(selectedLiftId) && selectedLiftId !== "",
   );
+
+  async function reloadTradesGrid() {
+    setPending(true);
+    const trades = await loadInboundTrades(selectedIds);
+    setRows(trades.rows);
+    setMessage(trades.ok ? "" : trades.message);
+    setPending(false);
+  }
 
   async function reloadTrackingGrid() {
     if (!selectedTradeId) {
@@ -1615,15 +1564,13 @@ export default function InboundPanel({ options, userId = "" }) {
 
   useEffect(() => {
     if (!transportChannelOpen) {
-      transportPrefillPendingRef.current = false;
-      transportPrefillCompanyRef.current = "";
+      transportPrefillRef.current = null;
       return undefined;
     }
 
     const prefill =
       transportChannelMode === "change" ? transportChannelPrefill : null;
-    transportPrefillPendingRef.current = Boolean(prefill);
-    transportPrefillCompanyRef.current = "";
+    transportPrefillRef.current = prefill;
 
     setTransportDescription(prefill?.description ?? "");
     setTransportCompanyId(SELECT_LOOKUP.id);
@@ -1636,6 +1583,7 @@ export default function InboundPanel({ options, userId = "" }) {
     setTruckDrivers([]);
     setTrucks([]);
     setTruckTrailers([]);
+    setTransportChildLookupsReady(false);
 
     let cancelled = false;
 
@@ -1647,65 +1595,23 @@ export default function InboundPanel({ options, userId = "" }) {
       }
 
       setTransportCompanies(companies.options);
+      setTransportLookupsMessage(companies.ok ? "" : companies.message);
 
       if (!prefill) {
-        transportPrefillPendingRef.current = false;
-        setTransportLookupsMessage(companies.ok ? "" : companies.message);
         return;
       }
 
-      const companyId = transportLookupId(
+      const companyId = lookupIdFromValue(
         companies.options,
         prefill.companyId,
-        prefill.companyLabel,
       );
 
       if (!isLookupSelected(companyId)) {
-        transportPrefillPendingRef.current = false;
-        setTransportLookupsMessage(companies.ok ? "" : companies.message);
+        transportPrefillRef.current = null;
         return;
       }
 
-      const [drivers, nextTrucks, trailers] = await Promise.all([
-        loadTruckDrivers(companyId),
-        loadTrucks(companyId),
-        loadTruckTrailers(companyId),
-      ]);
-
-      if (cancelled) {
-        return;
-      }
-
-      setTruckDrivers(drivers.options);
-      setTrucks(nextTrucks.options);
-      setTruckTrailers(trailers.options);
-      setTransportLookupsMessage(
-        [companies, drivers, nextTrucks, trailers]
-          .filter((result) => !result.ok)
-          .map((result) => result.message)
-          .filter(Boolean)
-          .join(" "),
-      );
-      transportPrefillCompanyRef.current = companyId;
-      transportPrefillPendingRef.current = false;
       setTransportCompanyId(companyId);
-      setTruckDriverId(
-        transportLookupId(
-          drivers.options,
-          prefill.driverId,
-          prefill.driverLabel,
-        ),
-      );
-      setTruckId(
-        transportLookupId(nextTrucks.options, prefill.truckLabel, prefill.truckId),
-      );
-      setTruckTrailerId(
-        transportLookupId(
-          trailers.options,
-          prefill.trailerId,
-          prefill.trailerLabel,
-        ),
-      );
     }
 
     load();
@@ -1720,18 +1626,6 @@ export default function InboundPanel({ options, userId = "" }) {
       return undefined;
     }
 
-    if (transportPrefillPendingRef.current) {
-      return undefined;
-    }
-
-    if (
-      transportPrefillCompanyRef.current &&
-      transportCompanyId === transportPrefillCompanyRef.current
-    ) {
-      transportPrefillCompanyRef.current = "";
-      return undefined;
-    }
-
     if (transportCompanyId === SELECT_LOOKUP.id) {
       setTruckDrivers([]);
       setTrucks([]);
@@ -1739,12 +1633,19 @@ export default function InboundPanel({ options, userId = "" }) {
       setTruckDriverId(SELECT_LOOKUP.id);
       setTruckId(SELECT_LOOKUP.id);
       setTruckTrailerId(SELECT_LOOKUP.id);
+      setTransportChildLookupsReady(false);
       return undefined;
     }
 
-    setTruckDriverId(SELECT_LOOKUP.id);
-    setTruckId(SELECT_LOOKUP.id);
-    setTruckTrailerId(SELECT_LOOKUP.id);
+    const prefill = transportPrefillRef.current;
+
+    if (!prefill) {
+      setTruckDriverId(SELECT_LOOKUP.id);
+      setTruckId(SELECT_LOOKUP.id);
+      setTruckTrailerId(SELECT_LOOKUP.id);
+    }
+
+    setTransportChildLookupsReady(false);
 
     let cancelled = false;
 
@@ -1769,6 +1670,7 @@ export default function InboundPanel({ options, userId = "" }) {
           .filter(Boolean)
           .join(" "),
       );
+      setTransportChildLookupsReady(true);
     }
 
     load();
@@ -1777,6 +1679,64 @@ export default function InboundPanel({ options, userId = "" }) {
       cancelled = true;
     };
   }, [transportChannelOpen, transportCompanyId]);
+
+  useEffect(() => {
+    const prefill = transportPrefillRef.current;
+
+    if (
+      !prefill ||
+      !transportChannelOpen ||
+      !transportChildLookupsReady
+    ) {
+      setTransportPrefillWaiting(false);
+      return undefined;
+    }
+
+    setTransportPrefillWaiting(true);
+
+    const timeoutId = window.setTimeout(() => {
+      if (transportPrefillRef.current !== prefill) {
+        setTransportPrefillWaiting(false);
+        return;
+      }
+
+      setTruckDriverId(lookupIdFromValue(truckDrivers, prefill.driverId));
+      setTruckId(lookupIdFromValue(trucks, prefill.truckId));
+      setTruckTrailerId(lookupIdFromValue(truckTrailers, prefill.trailerId));
+      transportPrefillRef.current = null;
+      setTransportPrefillWaiting(false);
+    }, 2000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      setTransportPrefillWaiting(false);
+    };
+  }, [
+    transportChannelOpen,
+    transportChildLookupsReady,
+    truckDrivers,
+    trucks,
+    truckTrailers,
+  ]);
+
+  useEffect(() => {
+    if (!transportPrefillWaiting) {
+      return undefined;
+    }
+
+    const root = document.documentElement;
+    const { body } = document;
+    const previousRootCursor = root.style.cursor;
+    const previousBodyCursor = body.style.cursor;
+
+    root.style.cursor = "wait";
+    body.style.cursor = "wait";
+
+    return () => {
+      root.style.cursor = previousRootCursor;
+      body.style.cursor = previousBodyCursor;
+    };
+  }, [transportPrefillWaiting]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3048,13 +3008,20 @@ export default function InboundPanel({ options, userId = "" }) {
             return;
           }
 
+          const statusChanged =
+            String(loadEdit.loadStatusId ?? "") !==
+            String(loadEdit.originalLoadStatusId ?? "");
+
           setLoadEdit(null);
           setLoadCommitPending(false);
 
           const refreshParents = reloadTrackingAndLiftGrids();
+          const refreshTrades = statusChanged
+            ? reloadTradesGrid()
+            : Promise.resolve();
 
           if (!groupingKey) {
-            await refreshParents;
+            await Promise.all([refreshParents, refreshTrades]);
             return;
           }
 
@@ -3063,7 +3030,7 @@ export default function InboundPanel({ options, userId = "" }) {
           setLoadRows(load.rows);
           setLoadMessage(load.ok ? "" : load.message);
           setLoadPending(false);
-          await refreshParents;
+          await Promise.all([refreshParents, refreshTrades]);
         }}
         onRowHover={(id) => {
           setLoadHoverId(id);
@@ -3591,7 +3558,7 @@ export default function InboundPanel({ options, userId = "" }) {
       <InboundCostDialog
         open={transportChannelOpen && selectedLoadId !== ""}
         title="Transport Channel Details"
-        panelClassName="max-w-2xl"
+        panelClassName={`max-w-2xl${transportPrefillWaiting ? " cursor-wait" : ""}`}
         onClose={() => {
           setTransportChannelOpen(false);
           setTransportChannelMode("add");
@@ -3662,7 +3629,7 @@ export default function InboundPanel({ options, userId = "" }) {
               value={field.value}
               onChange={(event) => field.onChange(event.target.value)}
               disabled={field.disabled}
-              className="rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 disabled:opacity-50"
+              className={`rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 disabled:opacity-50${transportPrefillWaiting ? " cursor-wait" : ""}`}
             >
               <option value={SELECT_LOOKUP.id}>{SELECT_LOOKUP.label}</option>
               {field.options.map((option) => (
@@ -3754,15 +3721,14 @@ export default function InboundPanel({ options, userId = "" }) {
                   return;
                 }
 
-                if (!transportChannelId) {
-                  setTransportAddMessage("Select a transport channel.");
+                if (!selectedLoadId) {
+                  setTransportAddMessage("Select a load item.");
                   return;
                 }
 
                 setTransportAddPending(true);
                 setTransportAddMessage("");
                 const result = await updateTransportChannel({
-                  id: transportChannelId,
                   loadId: selectedLoadId,
                   description: transportDescription,
                   transportCompanyId,

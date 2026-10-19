@@ -439,6 +439,10 @@ function gridColumns(row, labels = COLUMN_LABELS) {
     "inbound_item_tracking",
     "qty_to_lift_max",
     "load_qty_max",
+    "transport_company_id",
+    "driver_id",
+    "truck_id",
+    "trailer_id",
   ]);
   const rowKeys = new Set(
     Object.keys(row).map((key) => key.toLowerCase()),
@@ -475,7 +479,15 @@ function gridColumns(row, labels = COLUMN_LABELS) {
         label.toLowerCase() === "product_id" ||
         label.toLowerCase() === "product id" ||
         label.toLowerCase() === "inbound_item_tracking" ||
-        keyLower === "inbound_item_tracking",
+        keyLower === "inbound_item_tracking" ||
+        label.toLowerCase() === "transport_company_id" ||
+        label.toLowerCase() === "transport company id" ||
+        label.toLowerCase() === "driver_id" ||
+        label.toLowerCase() === "driver id" ||
+        label.toLowerCase() === "truck_id" ||
+        label.toLowerCase() === "truck id" ||
+        label.toLowerCase() === "trailer_id" ||
+        label.toLowerCase() === "trailer id",
     };
   });
 

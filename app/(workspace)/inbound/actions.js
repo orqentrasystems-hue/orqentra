@@ -3055,7 +3055,6 @@ export async function addTransportChannel({
 }
 
 export async function updateTransportChannel({
-  id,
   loadId,
   description,
   transportCompanyId,
@@ -3071,16 +3070,11 @@ export async function updateTransportChannel({
     return { ok: false, message: "Open Inbound from the app menu." };
   }
 
-  const channelId = toBigIntParam(id);
   const inboundLoadId = toBigIntParam(loadId);
   const companyId = toBigIntParam(transportCompanyId);
   const driverId = toBigIntParam(truckDriverId);
   const nextTruckId = toBigIntParam(truckId);
   const trailerId = toBigIntParam(truckTrailerId);
-
-  if (channelId == null) {
-    return { ok: false, message: "Select a transport channel." };
-  }
 
   if (inboundLoadId == null) {
     return { ok: false, message: "Select a load item." };
@@ -3103,7 +3097,7 @@ export async function updateTransportChannel({
     }
 
     const { error } = await supabase.rpc("pu_transport_channel", {
-      p_id: channelId,
+      p_id: inboundLoadId,
       p_inbound_load_id: inboundLoadId,
       p_descr: String(description ?? "").trim(),
       p_transport_company_id: companyId,
