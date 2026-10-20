@@ -506,7 +506,12 @@ function ethanolQtyFromPetrol(petr, perc) {
   return formatLiftQty((petr * 100) / (100 - perc) - petr);
 }
 
-function applyEthanolQtyFromPetrolDrafts(rows, perc, products = []) {
+function applyEthanolQtyFromPetrolDrafts(
+  rows,
+  perc,
+  products = [],
+  qtyKey = "qty_to_lift",
+) {
   const petrolIndex = (rows ?? []).findIndex(
     (row) => rowProductName(row, products) === "petrol",
   );
@@ -518,13 +523,13 @@ function applyEthanolQtyFromPetrolDrafts(rows, perc, products = []) {
     return rows;
   }
 
-  const petr = toDraftNumber(rows[petrolIndex]?.qty_to_lift);
+  const petr = toDraftNumber(rows[petrolIndex]?.[qtyKey]);
 
   return rows.map((row, rowIndex) =>
     rowIndex === ethanolIndex
       ? {
           ...row,
-          qty_to_lift: ethanolQtyFromPetrol(petr, perc),
+          [qtyKey]: ethanolQtyFromPetrol(petr, perc),
         }
       : row,
   );
@@ -1040,6 +1045,7 @@ export default function InboundPanel({ options, userId = "" }) {
   const [loadMessage, setLoadMessage] = useState("");
   const [loadPending, setLoadPending] = useState(false);
   const [loadDrafts, setLoadDrafts] = useState([]);
+  const loadPercRef = useRef(NaN);
   const [loadCommitPending, setLoadCommitPending] = useState(false);
   const [loadCommitMessage, setLoadCommitMessage] = useState("");
   const [loadHoverId, setLoadHoverId] = useState("");
@@ -3243,7 +3249,7 @@ export default function InboundPanel({ options, userId = "" }) {
               { direction: "down" },
             );
 
-            return patchDraftRows(
+            const patched = patchDraftRows(
               next,
               patch,
               index,
@@ -3253,6 +3259,24 @@ export default function InboundPanel({ options, userId = "" }) {
                 "expected_completion_date",
               ],
               { direction: "down", fromFirst: true },
+            );
+
+            if (!Object.prototype.hasOwnProperty.call(patch, "load_qty")) {
+              return patched;
+            }
+
+            if (
+              rowProductName(patched[index], trackingLookups.products) !==
+              "petrol"
+            ) {
+              return patched;
+            }
+
+            return applyEthanolQtyFromPetrolDrafts(
+              patched,
+              loadPercRef.current,
+              trackingLookups.products,
+              "load_qty",
             );
           });
           setLoadCommitMessage("");
@@ -3299,9 +3323,25 @@ export default function InboundPanel({ options, userId = "" }) {
                   setLoadMessage(collectionPoints.message);
                 }
 
+                const selectedTracking = trackingRows.find(
+                  (row) => rowId(row) === String(selectedTrackingId),
+                );
+                const loadperc = petrolEthanolPercent(
+                  trackingRows,
+                  selectedTracking,
+                  trackingLookups.products,
+                );
+                loadPercRef.current = loadperc;
                 setTransportHoverLoadId("");
                 setLoadEdit(null);
-                setLoadDrafts(result.rows.map(loadDraftFromLiftToLoad));
+                setLoadDrafts(
+                  applyEthanolQtyFromPetrolDrafts(
+                    result.rows.map(loadDraftFromLiftToLoad),
+                    loadperc,
+                    trackingLookups.products,
+                    "load_qty",
+                  ),
+                );
               }}
               className="text-sm font-medium text-blue-900 underline disabled:opacity-50 dark:text-blue-300"
             >
